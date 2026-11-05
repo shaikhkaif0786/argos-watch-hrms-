@@ -388,21 +388,117 @@ interface HRMSContextValue {
 
 const HRMSContext = createContext<HRMSContextValue | undefined>(undefined);
 
-const SUPER_ADMIN_EMP_ID = 'EMP-1000';
+export const DEFAULT_ADMIN_OPERATOR: Employee = {
+  id: 'EMP-ADMIN',
+  uid: 'uid_argos_admin',
+  managerUid: 'uid_argos_admin',
+  fullName: 'Argos Administrator',
+  email: 'argos.subscription04@gmail.com',
+  phone: '+91 98200 00001',
+  role: UserRole.ADMIN,
+  isSuperAdmin: true,
+  designation: 'Super Administrator',
+  department: 'Administration',
+  managerId: 'EMP-ADMIN',
+  managerName: 'Root Admin',
+  status: 'Active',
+  employmentType: 'Full-Time',
+  location: 'Main Atelier & HQ',
+  joiningDate: '2026-01-01',
+  probationEndDate: '2026-04-01',
+  dob: '1990-01-01',
+  gender: 'Other',
+  address: 'Argos Horology Atelier, Corporate House, India',
+  emergencyContactName: 'Executive Office',
+  emergencyContactPhone: '+91 98200 00099',
+  avatarUrl: '',
+  bankName: '',
+  bankAccountNumber: '',
+  ifscCode: '',
+  panNumber: '',
+  salary: {
+    baseSalary: 0,
+    hra: 0,
+    specialAllowance: 0,
+    pfDeduction: 0,
+    taxDeduction: 0,
+    professionalTax: 0,
+  },
+  salaryHistory: [],
+  leaveBalance: {
+    casualTotal: 12,
+    casualUsed: 0,
+    sickTotal: 8,
+    sickUsed: 0,
+    earnedTotal: 15,
+    earnedUsed: 0,
+  },
+};
+
+export const DEFAULT_ADMIN_USER_ACCESS: UserAccessRecord = {
+  employeeId: 'EMP-ADMIN',
+  fullName: 'Argos Administrator',
+  email: 'argos.subscription04@gmail.com',
+  role: UserRole.ADMIN,
+  roleId: 'ROLE-ADMIN',
+  roleName: 'Admin',
+  isSuperAdmin: true,
+  accessLevel: 'Controller',
+  accountStatus: 'Active',
+  department: 'Administration',
+  designation: 'Super Administrator',
+  managerId: 'EMP-ADMIN',
+  managerName: 'Root Admin',
+  lastLogin: 'Active Now',
+  invitationStatus: 'Accepted',
+  modulePermissions: getDefaultPermissionsForRole(UserRole.ADMIN, 'Controller'),
+  permissionOverrides: {},
+  allowedWorkspaces: ['OWN', 'ADMIN', 'HR'],
+  updatedAt: '2026-10-05 09:00:00',
+  updatedBy: 'System',
+  adminNote: 'Primary Super Administrator (Clean Installation)',
+};
+
+// One-time fresh installation cache wipe: guarantees all obsolete seeded employee data is completely purged
+if (typeof window !== 'undefined') {
+  const FRESH_INSTALL_FLAG = 'hrms_fresh_clean_installation_v3';
+  if (localStorage.getItem(FRESH_INSTALL_FLAG) !== 'true') {
+    const keysToPurge = [
+      'hrms_persisted_employees',
+      'hrms_persisted_user_access',
+      'hrms_persisted_attendance',
+      'hrms_persisted_leaves',
+      'hrms_persisted_considerations',
+      'hrms_persisted_payrolls',
+      'hrms_persisted_documents',
+      'hrms_persisted_letters',
+      'hrms_persisted_letter_history',
+      'hrms_persisted_internships',
+      'hrms_persisted_birthdays',
+      'hrms_persisted_mobile_users',
+      'hrms_persisted_mobile_locations',
+      'hrms_persisted_activity_logs',
+    ];
+    keysToPurge.forEach((k) => localStorage.removeItem(k));
+    localStorage.setItem(FRESH_INSTALL_FLAG, 'true');
+  }
+}
+
+const SUPER_ADMIN_EMP_ID = 'EMP-ADMIN';
 const SUPER_ADMIN_EMAIL = 'argos.subscription04@gmail.com';
 
 const ROLE_TO_PERSONA_EMP_ID: Record<UserRole, string> = {
-  [UserRole.ADMIN]: 'EMP-1000', // Argos Watch (Super Admin — argos.subscription04@gmail.com)
-  [UserRole.HR]: 'EMP-1001', // Chaitanya Katare (Head of People : Performance & Culture — HR)
-  [UserRole.MANAGER]: 'EMP-1003', // Sohail Derolwala (Head of Operations & Development)
-  [UserRole.EMPLOYEE]: 'EMP-1005', // Aliasger Channiwala (Inventory Coordinator)
+  [UserRole.ADMIN]: 'EMP-ADMIN',
+  [UserRole.HR]: 'EMP-ADMIN',
+  [UserRole.MANAGER]: 'EMP-ADMIN',
+  [UserRole.EMPLOYEE]: 'EMP-ADMIN',
 };
 
 export const HRMSProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [authLoading, setAuthLoading] = useState<boolean>(true);
   const [currentRole, setCurrentRole] = useState<UserRole>(UserRole.ADMIN);
-  const [personaEmpId, setPersonaEmpId] = useState<string>('EMP-1000');
+  const [personaEmpId, setPersonaEmpId] = useState<string>('EMP-ADMIN');
 
   // Navigation State
   const [activeModule, setActiveModule] = useState<PrimaryModuleId>('dashboard');
@@ -417,7 +513,7 @@ export const HRMSProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (stored) {
         const parsed = JSON.parse(stored);
         if (Array.isArray(fallback)) {
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed as unknown as T;
+          if (Array.isArray(parsed)) return parsed as unknown as T;
         } else if (parsed && typeof parsed === 'object') {
           return { ...fallback, ...parsed } as T;
         }
@@ -428,36 +524,9 @@ export const HRMSProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return fallback;
   };
 
-  // Domain State (Persisted across refreshes with Super Admin & Chaitanya HR reconciliation)
+  // Domain State (Fresh empty state for 0 employees)
   const [allEmployees, setAllEmployees] = useState<Employee[]>(() => {
-    const cached = readCached('hrms_persisted_employees', INITIAL_EMPLOYEES);
-    const superAdminSeed = INITIAL_EMPLOYEES.find((e) => e.id === SUPER_ADMIN_EMP_ID)!;
-    const hasSuperAdmin = cached.some((e) => e.id === SUPER_ADMIN_EMP_ID);
-    const baseList = hasSuperAdmin ? cached : [superAdminSeed, ...cached];
-    return baseList.map((e) => {
-      if (e.id === SUPER_ADMIN_EMP_ID) {
-        return {
-          ...e,
-          fullName: 'Argos Watch',
-          email: SUPER_ADMIN_EMAIL,
-          role: UserRole.ADMIN,
-          isSuperAdmin: true,
-          designation: 'Super Admin',
-          status: 'Active',
-        };
-      }
-      if (e.id === 'EMP-1001') {
-        // Requirement 4: Remove Chaitanya Katare from Admin role, keep as HR without deleting records
-        return {
-          ...e,
-          role: e.role === UserRole.ADMIN ? UserRole.HR : e.role,
-          isSuperAdmin: false,
-          managerId: SUPER_ADMIN_EMP_ID,
-          managerName: 'Argos Watch',
-        };
-      }
-      return e;
-    });
+    return readCached<Employee[]>('hrms_persisted_employees', INITIAL_EMPLOYEES);
   });
 
   const [departments, setDepartments] = useState<Department[]>(() =>
@@ -504,66 +573,7 @@ export const HRMSProvider: React.FC<{ children: React.ReactNode }> = ({ children
   );
 
   const [userAccessList, setUserAccessList] = useState<UserAccessRecord[]>(() => {
-    const cached = readCached('hrms_persisted_user_access', INITIAL_USER_ACCESS);
-    const superAdminAccessSeed = INITIAL_USER_ACCESS.find((u) => u.employeeId === SUPER_ADMIN_EMP_ID)!;
-    const hasSuperAdmin = cached.some((u) => u.employeeId === SUPER_ADMIN_EMP_ID);
-    const baseList = hasSuperAdmin ? cached : [superAdminAccessSeed, ...cached];
-    return baseList.map((u) => {
-      if (u.employeeId === SUPER_ADMIN_EMP_ID) {
-        return {
-          ...u,
-          fullName: 'Argos Watch',
-          email: SUPER_ADMIN_EMAIL,
-          role: UserRole.ADMIN,
-          roleId: 'ROLE-ADMIN',
-          roleName: 'Admin',
-          isSuperAdmin: true,
-          accessLevel: 'Controller',
-          accountStatus: 'Active',
-          allowedWorkspaces: ['OWN', 'ADMIN', 'HR'],
-          adminNote: 'Protected Primary Super Administrator (Argos Watch)',
-        };
-      }
-      if (u.employeeId === 'EMP-1001') {
-        // Requirement 4: Remove Chaitanya Katare from Admin role and strip any Admin-level overrides
-        const cleanedOverrides: Record<string, PermissionState> = {};
-        if (u.permissionOverrides) {
-          Object.entries(u.permissionOverrides).forEach(([k, v]) => {
-            if (!k.startsWith('admin.') && k !== 'dashboard.view_admin') {
-              cleanedOverrides[k] = v;
-            }
-          });
-        }
-        return {
-          ...u,
-          role: u.role === UserRole.ADMIN ? UserRole.HR : u.role,
-          roleId: u.roleId === 'ROLE-ADMIN' || u.role === UserRole.ADMIN ? 'ROLE-HR' : u.roleId || 'ROLE-HR',
-          roleName: u.roleName === 'Admin' || u.role === UserRole.ADMIN ? 'HR' : u.roleName || 'HR',
-          isSuperAdmin: false,
-          accessLevel: 'Controller',
-          allowedWorkspaces: ['OWN', 'HR'],
-          permissionOverrides: cleanedOverrides,
-          modulePermissions: getDefaultPermissionsForRole(UserRole.HR, 'Controller'),
-          adminNote: 'Head of People : Performance & Culture (HR Role)',
-        };
-      }
-      // Ensure any employee assigned HR has ['OWN', 'HR'] in allowedWorkspaces
-      if (u.role === UserRole.HR || u.roleId === 'ROLE-HR') {
-        return {
-          ...u,
-          role: UserRole.HR,
-          allowedWorkspaces: ['OWN', 'HR'],
-        };
-      }
-      if (u.role === UserRole.ADMIN || u.roleId === 'ROLE-ADMIN') {
-        return {
-          ...u,
-          role: UserRole.ADMIN,
-          allowedWorkspaces: ['OWN', 'ADMIN', 'HR'],
-        };
-      }
-      return u;
-    });
+    return readCached<UserAccessRecord[]>('hrms_persisted_user_access', INITIAL_USER_ACCESS);
   });
 
   const [masterLetterTemplates, setMasterLetterTemplates] = useState<MasterLetterTemplate[]>(() =>
@@ -978,13 +988,17 @@ export const HRMSProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const currentEmployee = useMemo(() => {
-    return allEmployees.find((e) => e.id === personaEmpId) || allEmployees[0];
+    return (
+      allEmployees.find((e) => e.id === personaEmpId) ||
+      allEmployees[0] ||
+      DEFAULT_ADMIN_OPERATOR
+    );
   }, [allEmployees, personaEmpId]);
 
   const currentUserAccess = useMemo(() => {
     return (
       userAccessList.find((u) => u.employeeId === currentEmployee.id) ||
-      userAccessList[0]
+      DEFAULT_ADMIN_USER_ACCESS
     );
   }, [userAccessList, currentEmployee.id]);
 
@@ -1237,7 +1251,7 @@ export const HRMSProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setActiveSubModule(null);
     setActiveModule('dashboard');
     const personaEmp =
-      allEmployees.find((e) => e.id === targetEmpId) || allEmployees[0];
+      allEmployees.find((e) => e.id === targetEmpId) || allEmployees[0] || DEFAULT_ADMIN_OPERATOR;
     appendAuditLog(
       `Switched Active Role Persona: ${prevRole} → ${role}`,
       'Role & Access',
@@ -2130,7 +2144,7 @@ export const HRMSProvider: React.FC<{ children: React.ReactNode }> = ({ children
       nextNum++;
     }
     const empId = `EMP-${nextNum}`;
-    const managerObj = allEmployees.find((e) => e.id === newEmp.managerId) || allEmployees[0];
+    const managerObj = allEmployees.find((e) => e.id === newEmp.managerId) || DEFAULT_ADMIN_OPERATOR;
     const created: Employee = {
       ...newEmp,
       id: empId,
@@ -3628,7 +3642,7 @@ export const HRMSProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return letters[0];
     }
     const targetEmp =
-      allEmployees.find((e) => e.id === payload.employeeId) || allEmployees[0];
+      allEmployees.find((e) => e.id === payload.employeeId) || allEmployees[0] || DEFAULT_ADMIN_OPERATOR;
     const newLetter: GeneratedLetter = {
       id: `LTR-2026-0${letters.length + 1}`,
       employeeId: targetEmp.id,

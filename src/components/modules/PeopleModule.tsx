@@ -28,6 +28,7 @@ import {
   AlertTriangle,
   Printer,
   CalendarClock,
+  Users,
 } from 'lucide-react';
 import { useHRMS } from '../../context/HRMSContext';
 import {
@@ -2850,6 +2851,15 @@ export function PeopleModule() {
         <>
           {/* Mobile-First Active Employee Cards */}
           <div className="space-y-3 md:hidden">
+            {scopedEmployees.length === 0 && (
+              <div className="bg-white border border-[#CBCBCB] rounded-2xl p-8 text-center text-[#525854] space-y-2">
+                <Users className="w-8 h-8 text-[#86868B] mx-auto" />
+                <p className="font-semibold text-sm text-[#141A17]">No employees found</p>
+                <p className="text-xs text-[#525854]">
+                  The employee directory is empty. Click &quot;Add Employee&quot; to onboard your first team member.
+                </p>
+              </div>
+            )}
             {scopedEmployees.map((emp) => {
               const isOnNotice =
                 emp.status === 'On Notice' ||
@@ -2948,6 +2958,19 @@ export function PeopleModule() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#CBCBCB]/60 text-xs">
+                  {scopedEmployees.length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="py-16 text-center text-[#525854]">
+                        <div className="flex flex-col items-center justify-center gap-2 max-w-sm mx-auto">
+                          <Users className="w-8 h-8 text-[#86868B]" />
+                          <p className="font-semibold text-sm text-[#141A17]">No employees registered</p>
+                          <p className="text-xs text-[#525854]">
+                            The employee directory is completely fresh and empty. Onboard your first employee to get started.
+                          </p>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
                   {scopedEmployees.map((emp) => {
                     const isOnNotice =
                       emp.status === 'On Notice' ||

@@ -29,12 +29,16 @@ service cloud.firestore {
     }
 
     function isBootstrappedAdmin() {
-      return isVerifiedUser() && request.auth.token.email == 'shaikhkaif@carterfarrago.com';
+      return isVerifiedUser() && (
+        request.auth.token.email == 'shaikhkaif@carterfarrago.com' ||
+        request.auth.token.email == 'argos.subscription04@gmail.com'
+      );
     }
 
     function isAdmin() {
       return isVerifiedUser() && (
         request.auth.token.email == 'shaikhkaif@carterfarrago.com' ||
+        request.auth.token.email == 'argos.subscription04@gmail.com' ||
         exists(/databases/$(database)/documents/admins/$(request.auth.uid))
       );
     }
