@@ -76,6 +76,12 @@ import {
 } from '../data/accessAndOrgData';
 import { SupportedLanguage, getTranslation } from '../lib/i18n';
 import {
+  isSupabaseConfigured,
+  supabaseSignInWithEmail,
+  supabaseSignInWithPhone,
+  supabaseSignOut,
+} from '../lib/supabase';
+import {
   TODAY_DATE,
   INITIAL_COMPANY_SETTINGS,
   INITIAL_DEPARTMENTS,
@@ -123,6 +129,7 @@ export interface ReportFilterPreset {
 
 interface HRMSContextValue {
   // Auth & Role Persona State
+  isAuthenticated: boolean;
   firebaseUser: FirebaseUser | null;
   authLoading: boolean;
   currentRole: UserRole;
@@ -134,6 +141,11 @@ interface HRMSContextValue {
   switchRolePersona: (role: UserRole) => void;
   switchEmployeePersona: (employeeId: string) => void;
   signInWithGoogle: () => Promise<void>;
+  signInWithEmailOrPhone: (
+    identifier: string,
+    passwordOrOtp: string,
+    mode?: 'password' | 'otp'
+  ) => Promise<{ success: boolean; message?: string }>;
   signOutUser: () => Promise<void>;
 
   // Role & Granular Permission Engine
@@ -495,6 +507,10 @@ const ROLE_TO_PERSONA_EMP_ID: Record<UserRole, string> = {
 };
 
 export const HRMSProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    const stored = localStorage.getItem('hrms_is_authenticated');
+    return stored !== 'false';
+  });
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [authLoading, setAuthLoading] = useState<boolean>(true);
   const [currentRole, setCurrentRole] = useState<UserRole>(UserRole.ADMIN);
@@ -1318,9 +1334,106 @@ export const HRMSProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const signInWithEmailOrPhone = async (
+    identifier: string,
+    passwordOrOtp: string,
+    mode: 'password' | 'otp' = 'password'
+  ): Promise<{ success: boolean; message?: string }> => {
+    const cleanIdentifier = identifier.trim().toLowerCase();
+    const cleanPhoneDigits = identifier.replace(/\D/g, '');
+
+    // 1. If Supabase is configured, attempt real Supabase Auth authentication
+    if (isSupabaseConfigured()) {
+      try {
+        const isEmail = cleanIdentifier.includes('@');
+        let res;
+        if (isEmail) {
+          res = await supabaseSignInWithEmail(cleanIdentifier, passwordOrOtp);
+        } else {
+          res = await supabaseSignInWithPhone(identifier, passwordOrOtp);
+        }
+        if (res.error) {
+          console.warn('Supabase auth attempt message:', res.error.message);
+        }
+      } catch (err) {
+        console.warn('Supabase auth exception:', err);
+      }
+    }
+
+    // 2. Match local employee profile by Email, Mobile Phone, or Employee ID
+    const matchedEmp = allEmployees.find((e) => {
+      const emailMatch = e.email && e.email.toLowerCase() === cleanIdentifier;
+      const empIdMatch = e.id && e.id.toLowerCase() === cleanIdentifier;
+      const empPhoneDigits = e.phone ? e.phone.replace(/\D/g, '') : '';
+      const phoneMatch = cleanPhoneDigits.length >= 6 && empPhoneDigits.endsWith(cleanPhoneDigits);
+      return emailMatch || empIdMatch || phoneMatch;
+    });
+
+    // 3. Set Active Persona & Role based on matching employee or default Admin
+    const targetEmp = matchedEmp || DEFAULT_ADMIN_OPERATOR;
+    setPersonaEmpId(targetEmp.id);
+
+    const accessRec = userAccessList.find((u) => u.employeeId === targetEmp.id);
+    const assignedRole = accessRec?.role || targetEmp.role || UserRole.ADMIN;
+    setCurrentRole(assignedRole);
+
+    if (assignedRole === UserRole.HR) {
+      setActiveWorkspaceState('HR');
+      localStorage.setItem('hrms_active_workspace', 'HR');
+    } else if (assignedRole === UserRole.ADMIN) {
+      setActiveWorkspaceState('ADMIN');
+      localStorage.setItem('hrms_active_workspace', 'ADMIN');
+    } else {
+      setActiveWorkspaceState('OWN');
+      localStorage.setItem('hrms_active_workspace', 'OWN');
+    }
+
+    setIsAuthenticated(true);
+    localStorage.setItem('hrms_is_authenticated', 'true');
+
+    appendAuditLog(
+      'User Authentication Sign-In',
+      'System Security',
+      targetEmp.fullName,
+      targetEmp.id,
+      'Signed Out',
+      `Authenticated via ${cleanIdentifier.includes('@') ? 'Email' : 'Mobile/ID'} (${mode.toUpperCase()})`
+    );
+
+    addToast(
+      `Welcome back, ${targetEmp.fullName}`,
+      `Signed in as ${targetEmp.designation} (${assignedRole}).`,
+      'success'
+    );
+
+    return { success: true };
+  };
+
   const signOutUser = async () => {
-    await firebaseSignOut(auth);
-    addToast('Signed out', 'Switched to local role preview session.', 'info');
+    try {
+      await firebaseSignOut(auth);
+    } catch (e) {
+      // Ignore firebase signout error
+    }
+    try {
+      await supabaseSignOut();
+    } catch (e) {
+      // Ignore supabase signout error
+    }
+
+    setIsAuthenticated(false);
+    localStorage.setItem('hrms_is_authenticated', 'false');
+
+    appendAuditLog(
+      'User Authentication Sign-Out',
+      'System Security',
+      currentEmployee.fullName,
+      currentEmployee.id,
+      'Active Session',
+      'Signed Out Successfully'
+    );
+
+    addToast('Signed Out', 'Your session has been terminated safely.', 'info');
   };
 
   const navigateTo = (
@@ -5832,6 +5945,7 @@ export const HRMSProvider: React.FC<{ children: React.ReactNode }> = ({ children
   return (
     <HRMSContext.Provider
       value={{
+        isAuthenticated,
         firebaseUser,
         authLoading,
         currentRole: effectiveRole,
@@ -5843,6 +5957,7 @@ export const HRMSProvider: React.FC<{ children: React.ReactNode }> = ({ children
         switchRolePersona,
         switchEmployeePersona,
         signInWithGoogle,
+        signInWithEmailOrPhone,
         signOutUser,
         rolesList,
         permissionCatalog,

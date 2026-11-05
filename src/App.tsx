@@ -1,6 +1,7 @@
 import React from 'react';
 import { HRMSProvider, useHRMS } from './context/HRMSContext';
 import { AppShell } from './components/layout/AppShell';
+import { LoginPage } from './components/auth/LoginPage';
 import { DashboardModule } from './components/modules/DashboardModule';
 import { PeopleModule } from './components/modules/PeopleModule';
 import { AttendanceModule } from './components/modules/AttendanceModule';
@@ -67,13 +68,27 @@ function ModuleRouter() {
   }
 }
 
-export default function App() {
+function MainContent() {
+  const { isAuthenticated } = useHRMS();
+
+  if (!isAuthenticated) {
+    return <LoginPage />;
+  }
+
   return (
-    <HRMSProvider>
+    <>
       <AppShell>
         <ModuleRouter />
       </AppShell>
       <AppLockOverlay />
+    </>
+  );
+}
+
+export default function App() {
+  return (
+    <HRMSProvider>
+      <MainContent />
     </HRMSProvider>
   );
 }

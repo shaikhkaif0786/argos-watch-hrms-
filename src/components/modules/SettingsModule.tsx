@@ -18,6 +18,9 @@ import {
   Sliders,
   IndianRupee,
   Calculator,
+  Database,
+  RefreshCw,
+  Trash2,
 } from 'lucide-react';
 import { useHRMS } from '../../context/HRMSContext';
 import { UserRole, WeekdaySchedule } from '../../types/hrms';
@@ -30,6 +33,12 @@ import {
   TimePicker,
 } from '../ui/EnterpriseComponents';
 import { SUPPORTED_LANGUAGES, SupportedLanguage } from '../../lib/i18n';
+import {
+  getSupabaseConfig,
+  isSupabaseConfigured,
+  saveSupabaseCredentials,
+  clearSupabaseCredentials,
+} from '../../lib/supabase';
 
 type SettingsTab =
   | 'organization'
@@ -38,7 +47,8 @@ type SettingsTab =
   | 'language'
   | 'privacy'
   | 'appLock'
-  | 'account';
+  | 'account'
+  | 'supabase';
 
 export const SettingsModule: React.FC = () => {
   const {
@@ -179,6 +189,11 @@ export const SettingsModule: React.FC = () => {
     }
   };
 
+  // Supabase Configuration State
+  const initialSbConfig = getSupabaseConfig();
+  const [sbUrlInput, setSbUrlInput] = useState(initialSbConfig.url);
+  const [sbKeyInput, setSbKeyInput] = useState(initialSbConfig.key);
+
   const TABS = [
     { id: 'organization' as const, label: t('settings.organization', 'Organization'), icon: Building2 },
     ...(canManageLateDeduction
@@ -194,6 +209,7 @@ export const SettingsModule: React.FC = () => {
     { id: 'language' as const, label: t('settings.language', 'Language'), icon: Globe },
     { id: 'privacy' as const, label: t('settings.privacy', 'Privacy & Policy'), icon: Shield },
     { id: 'appLock' as const, label: t('settings.appLock', 'App Lock'), icon: Lock },
+    { id: 'supabase' as const, label: 'Supabase Database', icon: Database },
     { id: 'account' as const, label: t('settings.account', 'Account'), icon: User },
   ];
 
@@ -927,6 +943,133 @@ export const SettingsModule: React.FC = () => {
                     </div>
                   </div>
                 )}
+              </div>
+            </SectionCard>
+          )}
+
+          {/* ================================================================= */}
+          {/* TAB: SUPABASE DATABASE                                            */}
+          {/* ================================================================= */}
+          {activeTab === 'supabase' && (
+            <SectionCard
+              title="Supabase Integration Status & Credentials"
+              subtitle="View backend connection status and configure your Supabase Project URL and Anon Key."
+            >
+              <div className="space-y-5">
+                {/* Status Indicator */}
+                <div
+                  className={`p-4 rounded-2xl border flex items-center justify-between ${
+                    isSupabaseConfigured()
+                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-800 dark:text-emerald-300'
+                      : 'bg-amber-500/10 border-amber-500/30 text-amber-800 dark:text-amber-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div
+                      className={`w-3 h-3 rounded-full animate-pulse ${
+                        isSupabaseConfigured() ? 'bg-emerald-500' : 'bg-amber-500'
+                      }`}
+                    />
+                    <div>
+                      <div className="font-semibold text-xs">
+                        {isSupabaseConfigured()
+                          ? 'Supabase Credentials Configured'
+                          : 'Pending Supabase Credentials'}
+                      </div>
+                      <div className="text-[11px] opacity-80 mt-0.5">
+                        {isSupabaseConfigured()
+                          ? `Connected using credentials from ${getSupabaseConfig().source}.`
+                          : 'Please enter your Supabase Project URL & Anon Key below or set environment variables.'}
+                      </div>
+                    </div>
+                  </div>
+                  <span className="text-[11px] font-mono font-bold px-2.5 py-1 rounded-lg bg-white/40 dark:bg-black/40">
+                    {isSupabaseConfigured() ? 'READY' : 'PENDING'}
+                  </span>
+                </div>
+
+                {/* Form to enter/update credentials */}
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (!sbUrlInput.trim() || !sbKeyInput.trim()) {
+                      addToast('Missing Credentials', 'Please enter both URL and Anon Key.', 'error');
+                      return;
+                    }
+                    saveSupabaseCredentials(sbUrlInput, sbKeyInput);
+                    addToast('Supabase Saved', 'Saved Supabase credentials in local configuration.', 'success');
+                  }}
+                  className="space-y-4"
+                >
+                  <div>
+                    <label className="block text-xs font-medium text-[#6E6E73] dark:text-[#A1A1A6] mb-1">
+                      Supabase Project URL
+                    </label>
+                    <input
+                      type="url"
+                      placeholder="https://xyzcompany.supabase.co"
+                      value={sbUrlInput}
+                      onChange={(e) => setSbUrlInput(e.target.value)}
+                      className="w-full px-3 py-2 bg-[#F0F0F2] dark:bg-[#202022] border border-[#E5E5EA] dark:border-[#2C2C2E] rounded-xl text-xs font-mono text-[#1D1D1F] dark:text-[#F5F5F7] outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-[#6E6E73] dark:text-[#A1A1A6] mb-1">
+                      Supabase Anon (Public) Key
+                    </label>
+                    <input
+                      type="password"
+                      placeholder="eyJhYmdj... (your anon key)"
+                      value={sbKeyInput}
+                      onChange={(e) => setSbKeyInput(e.target.value)}
+                      className="w-full px-3 py-2 bg-[#F0F0F2] dark:bg-[#202022] border border-[#E5E5EA] dark:border-[#2C2C2E] rounded-xl text-xs font-mono text-[#1D1D1F] dark:text-[#F5F5F7] outline-none"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2">
+                    {getSupabaseConfig().source === 'localStorage' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          clearSupabaseCredentials();
+                          const newConfig = getSupabaseConfig();
+                          setSbUrlInput(newConfig.url);
+                          setSbKeyInput(newConfig.key);
+                          addToast('Credentials Cleared', 'Removed local Supabase keys.', 'info');
+                        }}
+                        className="px-3 py-1.5 text-xs text-red-600 dark:text-red-400 hover:bg-red-500/10 rounded-xl transition-colors flex items-center gap-1"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Clear Saved Keys</span>
+                      </button>
+                    )}
+                    <div className="flex items-center gap-2 ml-auto">
+                      <button
+                        type="submit"
+                        className="px-4 py-2 text-xs font-semibold text-white bg-[#2D5A27] hover:bg-[#23461E] rounded-xl transition-colors cursor-pointer"
+                      >
+                        Save & Apply Credentials
+                      </button>
+                    </div>
+                  </div>
+                </form>
+
+                {/* Instructions Box */}
+                <div className="p-4 rounded-2xl bg-[#F0F0F2] dark:bg-[#1C1C1E] border border-[#E5E5EA] dark:border-[#2C2C2E] text-xs space-y-2 text-[#6E6E73] dark:text-[#A1A1A6]">
+                  <div className="font-semibold text-[#1D1D1F] dark:text-[#F5F5F7] text-xs">
+                    How to get your Supabase keys:
+                  </div>
+                  <ol className="list-decimal list-inside space-y-1 text-[11px]">
+                    <li>
+                      Log into your <strong className="text-[#1D1D1F] dark:text-[#F5F5F7]">Supabase Dashboard</strong> at supabase.com
+                    </li>
+                    <li>Select your project (or create a new project)</li>
+                    <li>Go to <strong>Project Settings → API</strong></li>
+                    <li>Copy your <strong>Project URL</strong> and <strong>anon / public key</strong></li>
+                    <li>Paste them into the fields above or put them into your <code className="font-mono">.env</code> file as <code className="font-mono">VITE_SUPABASE_URL</code> &amp; <code className="font-mono">VITE_SUPABASE_ANON_KEY</code>.</li>
+                  </ol>
+                </div>
               </div>
             </SectionCard>
           )}
