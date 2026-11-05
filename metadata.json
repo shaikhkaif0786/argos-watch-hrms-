@@ -1,0 +1,6 @@
+{
+  "name": "Vellum Enterprise HRMS & Payroll",
+  "description": "Enterprise-grade in-house Human Resource Management System and Payroll platform with role-based access control, attendance tracking, leave workflows, considerations, policy lifecycle, and automated HR letters.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
