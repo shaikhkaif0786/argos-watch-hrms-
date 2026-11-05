@@ -21,6 +21,10 @@ import {
   Database,
   RefreshCw,
   Trash2,
+  Copy,
+  Code,
+  Mail,
+  Phone,
 } from 'lucide-react';
 import { useHRMS } from '../../context/HRMSContext';
 import { UserRole, WeekdaySchedule } from '../../types/hrms';
@@ -38,6 +42,9 @@ import {
   isSupabaseConfigured,
   saveSupabaseCredentials,
   clearSupabaseCredentials,
+  SUPABASE_EMAIL_OTP_TEMPLATE,
+  SUPABASE_SMS_OTP_TEMPLATE,
+  SUPABASE_LOGIN_ACTIVITY_SQL,
 } from '../../lib/supabase';
 
 type SettingsTab =
@@ -951,127 +958,216 @@ export const SettingsModule: React.FC = () => {
           {/* TAB: SUPABASE DATABASE                                            */}
           {/* ================================================================= */}
           {activeTab === 'supabase' && (
-            <SectionCard
-              title="Supabase Integration Status & Credentials"
-              subtitle="View backend connection status and configure your Supabase Project URL and Anon Key."
-            >
-              <div className="space-y-5">
-                {/* Status Indicator */}
-                <div
-                  className={`p-4 rounded-2xl border flex items-center justify-between ${
-                    isSupabaseConfigured()
-                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-800 dark:text-emerald-300'
-                      : 'bg-amber-500/10 border-amber-500/30 text-amber-800 dark:text-amber-300'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <div
-                      className={`w-3 h-3 rounded-full animate-pulse ${
-                        isSupabaseConfigured() ? 'bg-emerald-500' : 'bg-amber-500'
-                      }`}
-                    />
-                    <div>
-                      <div className="font-semibold text-xs">
-                        {isSupabaseConfigured()
-                          ? 'Supabase Credentials Configured'
-                          : 'Pending Supabase Credentials'}
-                      </div>
-                      <div className="text-[11px] opacity-80 mt-0.5">
-                        {isSupabaseConfigured()
-                          ? `Connected using credentials from ${getSupabaseConfig().source}.`
-                          : 'Please enter your Supabase Project URL & Anon Key below or set environment variables.'}
+            <div className="space-y-6">
+              <SectionCard
+                title="Supabase Integration Status & Credentials"
+                subtitle="View backend connection status and configure your Supabase Project URL and Anon Key."
+              >
+                <div className="space-y-5">
+                  {/* Status Indicator */}
+                  <div
+                    className={`p-4 rounded-2xl border flex items-center justify-between ${
+                      isSupabaseConfigured()
+                        ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-800 dark:text-emerald-300'
+                        : 'bg-amber-500/10 border-amber-500/30 text-amber-800 dark:text-amber-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div
+                        className={`w-3 h-3 rounded-full animate-pulse ${
+                          isSupabaseConfigured() ? 'bg-emerald-500' : 'bg-amber-500'
+                        }`}
+                      />
+                      <div>
+                        <div className="font-semibold text-xs">
+                          {isSupabaseConfigured()
+                            ? 'Supabase Credentials Configured'
+                            : 'Pending Supabase Credentials'}
+                        </div>
+                        <div className="text-[11px] opacity-80 mt-0.5">
+                          {isSupabaseConfigured()
+                            ? `Connected using credentials from ${getSupabaseConfig().source}.`
+                            : 'Please enter your Supabase Project URL & Anon Key below or set environment variables.'}
+                        </div>
                       </div>
                     </div>
+                    <span className="text-[11px] font-mono font-bold px-2.5 py-1 rounded-lg bg-white/40 dark:bg-black/40">
+                      {isSupabaseConfigured() ? 'READY' : 'PENDING'}
+                    </span>
                   </div>
-                  <span className="text-[11px] font-mono font-bold px-2.5 py-1 rounded-lg bg-white/40 dark:bg-black/40">
-                    {isSupabaseConfigured() ? 'READY' : 'PENDING'}
-                  </span>
+
+                  {/* Form to enter/update credentials */}
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      if (!sbUrlInput.trim() || !sbKeyInput.trim()) {
+                        addToast('Missing Credentials', 'Please enter both URL and Anon Key.', 'error');
+                        return;
+                      }
+                      saveSupabaseCredentials(sbUrlInput, sbKeyInput);
+                      addToast('Supabase Saved', 'Saved Supabase credentials in local configuration.', 'success');
+                    }}
+                    className="space-y-4"
+                  >
+                    <div>
+                      <label className="block text-xs font-medium text-[#6E6E73] dark:text-[#A1A1A6] mb-1">
+                        Supabase Project URL
+                      </label>
+                      <input
+                        type="url"
+                        placeholder="https://xyzcompany.supabase.co"
+                        value={sbUrlInput}
+                        onChange={(e) => setSbUrlInput(e.target.value)}
+                        className="w-full px-3 py-2 bg-[#F0F0F2] dark:bg-[#202022] border border-[#E5E5EA] dark:border-[#2C2C2E] rounded-xl text-xs font-mono text-[#1D1D1F] dark:text-[#F5F5F7] outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-[#6E6E73] dark:text-[#A1A1A6] mb-1">
+                        Supabase Anon (Public) Key
+                      </label>
+                      <input
+                        type="password"
+                        placeholder="eyJhYmdj... (your anon key)"
+                        value={sbKeyInput}
+                        onChange={(e) => setSbKeyInput(e.target.value)}
+                        className="w-full px-3 py-2 bg-[#F0F0F2] dark:bg-[#202022] border border-[#E5E5EA] dark:border-[#2C2C2E] rounded-xl text-xs font-mono text-[#1D1D1F] dark:text-[#F5F5F7] outline-none"
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between pt-2">
+                      {getSupabaseConfig().source === 'localStorage' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            clearSupabaseCredentials();
+                            const newConfig = getSupabaseConfig();
+                            setSbUrlInput(newConfig.url);
+                            setSbKeyInput(newConfig.key);
+                            addToast('Credentials Cleared', 'Removed local Supabase keys.', 'info');
+                          }}
+                          className="px-3 py-1.5 text-xs text-red-600 dark:text-red-400 hover:bg-red-500/10 rounded-xl transition-colors flex items-center gap-1"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Clear Saved Keys</span>
+                        </button>
+                      )}
+                      <div className="flex items-center gap-2 ml-auto">
+                        <button
+                          type="submit"
+                          className="px-4 py-2 text-xs font-semibold text-white bg-[#2D5A27] hover:bg-[#23461E] rounded-xl transition-colors cursor-pointer"
+                        >
+                          Save & Apply Credentials
+                        </button>
+                      </div>
+                    </div>
+                  </form>
+
+                  {/* Instructions Box */}
+                  <div className="p-4 rounded-2xl bg-[#F0F0F2] dark:bg-[#1C1C1E] border border-[#E5E5EA] dark:border-[#2C2C2E] text-xs space-y-2 text-[#6E6E73] dark:text-[#A1A1A6]">
+                    <div className="font-semibold text-[#1D1D1F] dark:text-[#F5F5F7] text-xs">
+                      How to get your Supabase keys:
+                    </div>
+                    <ol className="list-decimal list-inside space-y-1 text-[11px]">
+                      <li>
+                        Log into your <strong className="text-[#1D1D1F] dark:text-[#F5F5F7]">Supabase Dashboard</strong> at supabase.com
+                      </li>
+                      <li>Select your project (or create a new project)</li>
+                      <li>Go to <strong>Project Settings → API</strong></li>
+                      <li>Copy your <strong>Project URL</strong> and <strong>anon / public key</strong></li>
+                      <li>Paste them into the fields above or put them into your <code className="font-mono">.env</code> file as <code className="font-mono">VITE_SUPABASE_URL</code> &amp; <code className="font-mono">VITE_SUPABASE_ANON_KEY</code>.</li>
+                    </ol>
+                  </div>
                 </div>
+              </SectionCard>
 
-                {/* Form to enter/update credentials */}
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    if (!sbUrlInput.trim() || !sbKeyInput.trim()) {
-                      addToast('Missing Credentials', 'Please enter both URL and Anon Key.', 'error');
-                      return;
-                    }
-                    saveSupabaseCredentials(sbUrlInput, sbKeyInput);
-                    addToast('Supabase Saved', 'Saved Supabase credentials in local configuration.', 'success');
-                  }}
-                  className="space-y-4"
-                >
-                  <div>
-                    <label className="block text-xs font-medium text-[#6E6E73] dark:text-[#A1A1A6] mb-1">
-                      Supabase Project URL
-                    </label>
-                    <input
-                      type="url"
-                      placeholder="https://xyzcompany.supabase.co"
-                      value={sbUrlInput}
-                      onChange={(e) => setSbUrlInput(e.target.value)}
-                      className="w-full px-3 py-2 bg-[#F0F0F2] dark:bg-[#202022] border border-[#E5E5EA] dark:border-[#2C2C2E] rounded-xl text-xs font-mono text-[#1D1D1F] dark:text-[#F5F5F7] outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-medium text-[#6E6E73] dark:text-[#A1A1A6] mb-1">
-                      Supabase Anon (Public) Key
-                    </label>
-                    <input
-                      type="password"
-                      placeholder="eyJhYmdj... (your anon key)"
-                      value={sbKeyInput}
-                      onChange={(e) => setSbKeyInput(e.target.value)}
-                      className="w-full px-3 py-2 bg-[#F0F0F2] dark:bg-[#202022] border border-[#E5E5EA] dark:border-[#2C2C2E] rounded-xl text-xs font-mono text-[#1D1D1F] dark:text-[#F5F5F7] outline-none"
-                    />
-                  </div>
-
-                  <div className="flex items-center justify-between pt-2">
-                    {getSupabaseConfig().source === 'localStorage' && (
+              {/* OTP Templates Card */}
+              <SectionCard
+                title="OTP Authentication Templates (Email & SMS)"
+                subtitle="Copy these professionally designed OTP templates into your Supabase Dashboard under Authentication → Email / SMS Templates."
+              >
+                <div className="space-y-4 text-xs">
+                  {/* Email Template */}
+                  <div className="p-4 rounded-2xl bg-[#F0F0F2] dark:bg-[#1C1C1E] border border-[#E5E5EA] dark:border-[#2C2C2E] space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 font-semibold text-[#1D1D1F] dark:text-[#F5F5F7]">
+                        <Mail className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                        <span>HTML Email OTP Template</span>
+                      </div>
                       <button
                         type="button"
                         onClick={() => {
-                          clearSupabaseCredentials();
-                          const newConfig = getSupabaseConfig();
-                          setSbUrlInput(newConfig.url);
-                          setSbKeyInput(newConfig.key);
-                          addToast('Credentials Cleared', 'Removed local Supabase keys.', 'info');
+                          navigator.clipboard.writeText(SUPABASE_EMAIL_OTP_TEMPLATE);
+                          addToast('Email Template Copied', 'Copied HTML email template to clipboard.', 'success');
                         }}
-                        className="px-3 py-1.5 text-xs text-red-600 dark:text-red-400 hover:bg-red-500/10 rounded-xl transition-colors flex items-center gap-1"
+                        className="px-3 py-1.5 text-xs font-semibold text-[#1D1D1F] dark:text-[#F5F5F7] bg-white dark:bg-[#2C2C2E] border border-[#E5E5EA] dark:border-[#3A3A3C] hover:border-[#1D1D1F] rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        <span>Clear Saved Keys</span>
-                      </button>
-                    )}
-                    <div className="flex items-center gap-2 ml-auto">
-                      <button
-                        type="submit"
-                        className="px-4 py-2 text-xs font-semibold text-white bg-[#2D5A27] hover:bg-[#23461E] rounded-xl transition-colors cursor-pointer"
-                      >
-                        Save & Apply Credentials
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Copy HTML</span>
                       </button>
                     </div>
+                    <pre className="p-3 rounded-xl bg-white dark:bg-[#000000] border border-[#E5E5EA] dark:border-[#2C2C2E] text-[11px] font-mono text-[#6E6E73] dark:text-[#A1A1A6] max-h-36 overflow-y-auto whitespace-pre-wrap leading-relaxed">
+                      {SUPABASE_EMAIL_OTP_TEMPLATE}
+                    </pre>
                   </div>
-                </form>
 
-                {/* Instructions Box */}
-                <div className="p-4 rounded-2xl bg-[#F0F0F2] dark:bg-[#1C1C1E] border border-[#E5E5EA] dark:border-[#2C2C2E] text-xs space-y-2 text-[#6E6E73] dark:text-[#A1A1A6]">
-                  <div className="font-semibold text-[#1D1D1F] dark:text-[#F5F5F7] text-xs">
-                    How to get your Supabase keys:
+                  {/* SMS Template */}
+                  <div className="p-4 rounded-2xl bg-[#F0F0F2] dark:bg-[#1C1C1E] border border-[#E5E5EA] dark:border-[#2C2C2E] space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 font-semibold text-[#1D1D1F] dark:text-[#F5F5F7]">
+                        <Phone className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                        <span>SMS OTP Message Template</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(SUPABASE_SMS_OTP_TEMPLATE);
+                          addToast('SMS Template Copied', 'Copied SMS OTP template to clipboard.', 'success');
+                        }}
+                        className="px-3 py-1.5 text-xs font-semibold text-[#1D1D1F] dark:text-[#F5F5F7] bg-white dark:bg-[#2C2C2E] border border-[#E5E5EA] dark:border-[#3A3A3C] hover:border-[#1D1D1F] rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Copy Text</span>
+                      </button>
+                    </div>
+                    <div className="p-3 rounded-xl bg-white dark:bg-[#000000] border border-[#E5E5EA] dark:border-[#2C2C2E] text-xs font-mono text-[#1D1D1F] dark:text-[#F5F5F7]">
+                      {SUPABASE_SMS_OTP_TEMPLATE}
+                    </div>
                   </div>
-                  <ol className="list-decimal list-inside space-y-1 text-[11px]">
-                    <li>
-                      Log into your <strong className="text-[#1D1D1F] dark:text-[#F5F5F7]">Supabase Dashboard</strong> at supabase.com
-                    </li>
-                    <li>Select your project (or create a new project)</li>
-                    <li>Go to <strong>Project Settings → API</strong></li>
-                    <li>Copy your <strong>Project URL</strong> and <strong>anon / public key</strong></li>
-                    <li>Paste them into the fields above or put them into your <code className="font-mono">.env</code> file as <code className="font-mono">VITE_SUPABASE_URL</code> &amp; <code className="font-mono">VITE_SUPABASE_ANON_KEY</code>.</li>
-                  </ol>
                 </div>
-              </div>
-            </SectionCard>
+              </SectionCard>
+
+              {/* Supabase User Login Activity Tracking Table Schema */}
+              <SectionCard
+                title="User Login Activity Tracking (Supabase Table Setup)"
+                subtitle="Run this SQL script in Supabase Dashboard → SQL Editor to create the 'user_login_activity' table. Supabase will record every user login with timestamp, auth method, email, phone, and employee role."
+              >
+                <div className="space-y-3 text-xs">
+                  <div className="p-4 rounded-2xl bg-[#F0F0F2] dark:bg-[#1C1C1E] border border-[#E5E5EA] dark:border-[#2C2C2E] space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 font-semibold text-[#1D1D1F] dark:text-[#F5F5F7]">
+                        <Code className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                        <span>SQL Setup Script for public.user_login_activity</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(SUPABASE_LOGIN_ACTIVITY_SQL);
+                          addToast('SQL Script Copied', 'Paste this into Supabase SQL Editor and click Run.', 'success');
+                        }}
+                        className="px-3 py-1.5 text-xs font-semibold text-white bg-[#000000] dark:bg-white dark:text-[#000000] rounded-xl hover:opacity-90 transition-opacity flex items-center gap-1.5 cursor-pointer shadow-xs"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Copy SQL Script</span>
+                      </button>
+                    </div>
+                    <pre className="p-3.5 rounded-xl bg-white dark:bg-[#000000] border border-[#E5E5EA] dark:border-[#2C2C2E] text-[11px] font-mono text-[#1D1D1F] dark:text-[#F5F5F7] max-h-48 overflow-y-auto whitespace-pre-wrap leading-relaxed">
+                      {SUPABASE_LOGIN_ACTIVITY_SQL}
+                    </pre>
+                  </div>
+                </div>
+              </SectionCard>
+            </div>
           )}
 
           {/* ================================================================= */}

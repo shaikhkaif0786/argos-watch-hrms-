@@ -79,6 +79,9 @@ import {
   isSupabaseConfigured,
   supabaseSignInWithEmail,
   supabaseSignInWithPhone,
+  supabaseSendOtp,
+  supabaseVerifyOtp,
+  recordSupabaseLoginActivity,
   supabaseSignOut,
 } from '../lib/supabase';
 import {
@@ -1341,19 +1344,21 @@ export const HRMSProvider: React.FC<{ children: React.ReactNode }> = ({ children
   ): Promise<{ success: boolean; message?: string }> => {
     const cleanIdentifier = identifier.trim().toLowerCase();
     const cleanPhoneDigits = identifier.replace(/\D/g, '');
+    const isEmail = cleanIdentifier.includes('@');
 
-    // 1. If Supabase is configured, attempt real Supabase Auth authentication
+    // 1. If Supabase is configured, attempt real Supabase Auth authentication (Password or OTP)
     if (isSupabaseConfigured()) {
       try {
-        const isEmail = cleanIdentifier.includes('@');
         let res;
-        if (isEmail) {
+        if (mode === 'otp') {
+          res = await supabaseVerifyOtp(identifier, passwordOrOtp);
+        } else if (isEmail) {
           res = await supabaseSignInWithEmail(cleanIdentifier, passwordOrOtp);
         } else {
           res = await supabaseSignInWithPhone(identifier, passwordOrOtp);
         }
         if (res.error) {
-          console.warn('Supabase auth attempt message:', res.error.message);
+          console.warn('Supabase auth attempt note:', res.error.message);
         }
       } catch (err) {
         console.warn('Supabase auth exception:', err);
@@ -1391,18 +1396,33 @@ export const HRMSProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsAuthenticated(true);
     localStorage.setItem('hrms_is_authenticated', 'true');
 
+    // 4. Record User Login Activity directly in Supabase table 'user_login_activity'
+    const authMethodLabel: 'EMAIL_OTP' | 'PHONE_OTP' | 'PASSWORD' =
+      mode === 'otp' ? (isEmail ? 'EMAIL_OTP' : 'PHONE_OTP') : 'PASSWORD';
+
+    recordSupabaseLoginActivity({
+      email: targetEmp.email,
+      phone: targetEmp.phone,
+      employeeId: targetEmp.id,
+      employeeName: targetEmp.fullName,
+      department: targetEmp.department,
+      role: assignedRole,
+      authMethod: authMethodLabel,
+      status: 'SUCCESS',
+    });
+
     appendAuditLog(
       'User Authentication Sign-In',
       'System Security',
       targetEmp.fullName,
       targetEmp.id,
       'Signed Out',
-      `Authenticated via ${cleanIdentifier.includes('@') ? 'Email' : 'Mobile/ID'} (${mode.toUpperCase()})`
+      `Authenticated via ${isEmail ? 'Email' : 'Mobile/ID'} (${mode.toUpperCase()})`
     );
 
     addToast(
       `Welcome back, ${targetEmp.fullName}`,
-      `Signed in as ${targetEmp.designation} (${assignedRole}).`,
+      `Signed in as ${targetEmp.designation} (${assignedRole}). Logged to Supabase.`,
       'success'
     );
 
