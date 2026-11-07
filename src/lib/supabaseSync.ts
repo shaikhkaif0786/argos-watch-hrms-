@@ -8,9 +8,8 @@ import {
   Department,
   CompanyPolicy,
   ActivityLogEntry,
-  UserAccessRecord,
-  CompanySettings,
   EmployeeReview,
+  UserRole,
 } from '../types/hrms';
 
 /**
@@ -60,7 +59,7 @@ CREATE TABLE IF NOT EXISTS public.employees (
 -- 2. Attendance Records Table
 CREATE TABLE IF NOT EXISTS public.attendance_records (
   id TEXT PRIMARY KEY,
-  employee_id TEXT NOT NULL REFERENCES public.employees(id) ON DELETE CASCADE,
+  employee_id TEXT NOT NULL,
   employee_name TEXT,
   department TEXT,
   manager_id TEXT,
@@ -84,13 +83,13 @@ CREATE TABLE IF NOT EXISTS public.attendance_records (
 -- 3. Leave Requests Table
 CREATE TABLE IF NOT EXISTS public.leave_requests (
   id TEXT PRIMARY KEY,
-  employee_id TEXT NOT NULL REFERENCES public.employees(id) ON DELETE CASCADE,
+  employee_id TEXT NOT NULL,
   employee_name TEXT,
   department TEXT,
   leave_type TEXT NOT NULL,
   start_date TEXT NOT NULL,
   end_date TEXT NOT NULL,
-  days_count INTEGER DEFAULT 1,
+  days_count NUMERIC(5,2) DEFAULT 1,
   reason TEXT,
   status TEXT DEFAULT 'Pending',
   applied_at TEXT,
@@ -103,7 +102,7 @@ CREATE TABLE IF NOT EXISTS public.leave_requests (
 -- 4. Consideration Requests Table
 CREATE TABLE IF NOT EXISTS public.consideration_requests (
   id TEXT PRIMARY KEY,
-  employee_id TEXT NOT NULL REFERENCES public.employees(id) ON DELETE CASCADE,
+  employee_id TEXT NOT NULL,
   employee_name TEXT,
   department TEXT,
   date TEXT NOT NULL,
@@ -117,7 +116,7 @@ CREATE TABLE IF NOT EXISTS public.consideration_requests (
 -- 5. Payroll Records Table
 CREATE TABLE IF NOT EXISTS public.payroll_records (
   id TEXT PRIMARY KEY,
-  employee_id TEXT NOT NULL REFERENCES public.employees(id) ON DELETE CASCADE,
+  employee_id TEXT NOT NULL,
   employee_name TEXT,
   department TEXT,
   month TEXT NOT NULL,
@@ -168,7 +167,7 @@ CREATE TABLE IF NOT EXISTS public.activity_logs (
 -- 9. Employee Reviews Table
 CREATE TABLE IF NOT EXISTS public.employee_reviews (
   id TEXT PRIMARY KEY,
-  target_employee_id TEXT NOT NULL REFERENCES public.employees(id) ON DELETE CASCADE,
+  target_employee_id TEXT NOT NULL,
   target_employee_name TEXT,
   target_employee_department TEXT,
   target_employee_designation TEXT,
@@ -176,12 +175,12 @@ CREATE TABLE IF NOT EXISTS public.employee_reviews (
   reviewer_employee_name TEXT,
   reviewer_department TEXT,
   reviewer_designation TEXT,
-  review_type TEXT NOT NULL, -- POSITIVE or NEGATIVE
-  star_count INTEGER DEFAULT 1, -- 1 to 5 stars
+  review_type TEXT NOT NULL,
+  star_count INTEGER DEFAULT 1,
   category TEXT,
   custom_category TEXT,
   reason TEXT NOT NULL,
-  status TEXT DEFAULT 'PENDING', -- PENDING, APPROVED, REJECTED
+  status TEXT DEFAULT 'PENDING',
   submitted_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
   decided_at TIMESTAMP WITH TIME ZONE,
   decided_by TEXT,
@@ -210,142 +209,420 @@ CREATE POLICY "Allow All Activity Logs Ops" ON public.activity_logs FOR ALL USIN
 CREATE POLICY "Allow All Reviews Ops" ON public.employee_reviews FOR ALL USING (true) WITH CHECK (true);
 `;
 
+const mapEmployeeToRow = (emp: Employee) => ({
+  id: emp.id,
+  uid: emp.uid || `uid_${emp.id}`,
+  manager_uid: emp.managerUid || 'uid_argos_admin',
+  full_name: emp.fullName,
+  email: emp.email || '',
+  phone: emp.phone || '',
+  role: emp.role || UserRole.EMPLOYEE,
+  is_super_admin: emp.isSuperAdmin || false,
+  designation: emp.designation || 'Employee',
+  department: emp.department || 'Unassigned',
+  manager_id: emp.managerId || 'EMP-ADMIN',
+  manager_name: emp.managerName || 'Argos Administrator',
+  status: emp.status || 'Active',
+  employment_type: emp.employmentType || 'Full-Time',
+  location: emp.location || 'Main Atelier & HQ',
+  joining_date: emp.joiningDate || '2026-01-01',
+  probation_end_date: emp.probationEndDate || '2026-04-01',
+  dob: emp.dob || '1995-01-01',
+  gender: emp.gender || 'Other',
+  address: emp.address || '',
+  emergency_contact_name: emp.emergencyContactName || '',
+  emergency_contact_phone: emp.emergencyContactPhone || '',
+  avatar_url: emp.avatarUrl || '',
+  bank_name: emp.bankName || '',
+  bank_account_number: emp.bankAccountNumber || '',
+  ifsc_code: emp.ifscCode || '',
+  pan_number: emp.panNumber || '',
+  salary_data: emp.salary || {
+    baseSalary: 0,
+    hra: 0,
+    specialAllowance: 0,
+    pfDeduction: 0,
+    taxDeduction: 0,
+    professionalTax: 0,
+  },
+  leave_balance_data: emp.leaveBalance || {
+    casualTotal: 12,
+    casualUsed: 0,
+    sickTotal: 8,
+    sickUsed: 0,
+    earnedTotal: 15,
+    earnedUsed: 0,
+  },
+  updated_at: new Date().toISOString(),
+});
+
+const mapDepartmentToRow = (dept: Department) => ({
+  id: dept.id,
+  name: dept.name,
+  code: dept.code || dept.name.slice(0, 3).toUpperCase(),
+  head_id: dept.managerId || 'EMP-ADMIN',
+  head_name: dept.managerName || 'Argos Administrator',
+  description: dept.description || '',
+});
+
+const mapAttendanceToRow = (att: AttendanceRecord) => ({
+  id: att.id,
+  employee_id: att.employeeId,
+  employee_name: att.employeeName,
+  department: att.department,
+  manager_id: att.managerId || 'EMP-ADMIN',
+  date: att.date,
+  check_in: att.checkIn || null,
+  check_out: att.checkOut || null,
+  punch_in: att.punchIn || att.checkIn || null,
+  punch_out: att.punchOut || att.checkOut || null,
+  status: att.status || 'Present',
+  is_late: att.isLate || false,
+  late_minutes: att.lateMinutes || 0,
+  working_hours: att.workingHours || 0,
+  overtime_hours: att.overtimeHours || 0,
+  source: att.source || 'WEB',
+  is_manual_correction: att.isManualCorrection || false,
+  manual_correction_reason: att.manualCorrectionReason || null,
+  notes: att.notes || '',
+});
+
+const mapLeaveToRow = (lv: LeaveRequest) => ({
+  id: lv.id,
+  employee_id: lv.employeeId,
+  employee_name: lv.employeeName,
+  department: lv.department,
+  leave_type: lv.leaveType,
+  start_date: lv.startDate,
+  end_date: lv.endDate,
+  days_count: lv.days ?? 1,
+  reason: lv.reason || '',
+  status: lv.status || 'Approved',
+  applied_at: lv.appliedOn || lv.createdAt || new Date().toISOString().slice(0, 10),
+  decided_at: lv.decidedAt || null,
+  decided_by: lv.decidedBy || null,
+  decision_note: lv.decisionNote || null,
+});
+
 /**
- * Async Sync Routine: Upsert Employee to Supabase
+ * Upsert single Employee to Supabase
  */
 export const syncEmployeeToSupabase = async (emp: Employee) => {
   if (!isSupabaseConfigured()) return;
   try {
     const client = getSupabaseClient();
-    await client.from('employees').upsert([
-      {
-        id: emp.id,
-        uid: emp.uid,
-        manager_uid: emp.managerUid,
-        full_name: emp.fullName,
-        email: emp.email,
-        phone: emp.phone,
-        role: emp.role,
-        is_super_admin: emp.isSuperAdmin || false,
-        designation: emp.designation,
-        department: emp.department,
-        manager_id: emp.managerId,
-        manager_name: emp.managerName,
-        status: emp.status,
-        employment_type: emp.employmentType,
-        location: emp.location,
-        joining_date: emp.joiningDate,
-        probation_end_date: emp.probationEndDate,
-        dob: emp.dob,
-        gender: emp.gender,
-        address: emp.address,
-        emergency_contact_name: emp.emergencyContactName,
-        emergency_contact_phone: emp.emergencyContactPhone,
-        avatar_url: emp.avatarUrl,
-        bank_name: emp.bankName,
-        bank_account_number: emp.bankAccountNumber,
-        ifsc_code: emp.ifscCode,
-        pan_number: emp.panNumber,
-        salary_data: emp.salary,
-        leave_balance_data: emp.leaveBalance,
-        updated_at: new Date().toISOString(),
-      },
-    ]);
+    await client.from('employees').upsert([mapEmployeeToRow(emp)]);
   } catch (err) {
     console.warn('Failed syncing employee to Supabase:', err);
   }
 };
 
 /**
- * Async Sync Routine: Upsert Attendance Record to Supabase
+ * Bulk Upsert Employees to Supabase
+ */
+export const syncAllEmployeesToSupabase = async (employees: Employee[]) => {
+  if (!isSupabaseConfigured() || employees.length === 0) return;
+  try {
+    const client = getSupabaseClient();
+    const rows = employees.map(mapEmployeeToRow);
+    for (let i = 0; i < rows.length; i += 100) {
+      await client.from('employees').upsert(rows.slice(i, i + 100));
+    }
+  } catch (err) {
+    console.warn('Failed bulk syncing employees to Supabase:', err);
+  }
+};
+
+/**
+ * Delete Employee from Supabase
+ */
+export const deleteEmployeeFromSupabase = async (employeeId: string) => {
+  if (!isSupabaseConfigured()) return;
+  try {
+    const client = getSupabaseClient();
+    await client.from('employees').delete().eq('id', employeeId);
+  } catch (err) {
+    console.warn('Failed deleting employee from Supabase:', err);
+  }
+};
+
+/**
+ * Upsert single Department to Supabase
+ */
+export const syncDepartmentToSupabase = async (dept: Department) => {
+  if (!isSupabaseConfigured()) return;
+  try {
+    const client = getSupabaseClient();
+    await client.from('departments').upsert([mapDepartmentToRow(dept)]);
+  } catch (err) {
+    console.warn('Failed syncing department to Supabase:', err);
+  }
+};
+
+/**
+ * Bulk Upsert Departments to Supabase
+ */
+export const syncAllDepartmentsToSupabase = async (departments: Department[]) => {
+  if (!isSupabaseConfigured() || departments.length === 0) return;
+  try {
+    const client = getSupabaseClient();
+    await client.from('departments').upsert(departments.map(mapDepartmentToRow));
+  } catch (err) {
+    console.warn('Failed bulk syncing departments to Supabase:', err);
+  }
+};
+
+/**
+ * Delete Department from Supabase
+ */
+export const deleteDepartmentFromSupabase = async (departmentId: string) => {
+  if (!isSupabaseConfigured()) return;
+  try {
+    const client = getSupabaseClient();
+    await client.from('departments').delete().eq('id', departmentId);
+  } catch (err) {
+    console.warn('Failed deleting department from Supabase:', err);
+  }
+};
+
+/**
+ * Upsert Attendance Record to Supabase
  */
 export const syncAttendanceRecordToSupabase = async (att: AttendanceRecord) => {
   if (!isSupabaseConfigured()) return;
   try {
     const client = getSupabaseClient();
-    await client.from('attendance_records').upsert([
-      {
-        id: att.id,
-        employee_id: att.employeeId,
-        employee_name: att.employeeName,
-        department: att.department,
-        manager_id: att.managerId,
-        date: att.date,
-        check_in: att.checkIn,
-        check_out: att.checkOut,
-        punch_in: att.punchIn,
-        punch_out: att.punchOut,
-        status: att.status,
-        is_late: att.isLate || false,
-        late_minutes: att.lateMinutes || 0,
-        working_hours: att.workingHours || 0,
-        overtime_hours: att.overtimeHours || 0,
-        source: att.source || 'WEB',
-        is_manual_correction: att.isManualCorrection || false,
-        manual_correction_reason: att.manualCorrectionReason,
-        notes: att.notes,
-      },
-    ]);
+    await client.from('attendance_records').upsert([mapAttendanceToRow(att)]);
   } catch (err) {
     console.warn('Failed syncing attendance to Supabase:', err);
   }
 };
 
 /**
- * Fetch Initial State from Supabase tables on Startup
+ * Bulk Upsert Attendance Records to Supabase
+ */
+export const syncAllAttendanceToSupabase = async (records: AttendanceRecord[]) => {
+  if (!isSupabaseConfigured() || records.length === 0) return;
+  try {
+    const client = getSupabaseClient();
+    const rows = records.map(mapAttendanceToRow);
+    for (let i = 0; i < rows.length; i += 200) {
+      await client.from('attendance_records').upsert(rows.slice(i, i + 200));
+    }
+  } catch (err) {
+    console.warn('Failed bulk syncing attendance to Supabase:', err);
+  }
+};
+
+/**
+ * Upsert Leave Request to Supabase
+ */
+export const syncLeaveRequestToSupabase = async (lv: LeaveRequest) => {
+  if (!isSupabaseConfigured()) return;
+  try {
+    const client = getSupabaseClient();
+    await client.from('leave_requests').upsert([mapLeaveToRow(lv)]);
+  } catch (err) {
+    console.warn('Failed syncing leave request to Supabase:', err);
+  }
+};
+
+/**
+ * Bulk Upsert Leave Requests to Supabase
+ */
+export const syncAllLeavesToSupabase = async (leaves: LeaveRequest[]) => {
+  if (!isSupabaseConfigured() || leaves.length === 0) return;
+  try {
+    const client = getSupabaseClient();
+    const rows = leaves.map(mapLeaveToRow);
+    for (let i = 0; i < rows.length; i += 200) {
+      await client.from('leave_requests').upsert(rows.slice(i, i + 200));
+    }
+  } catch (err) {
+    console.warn('Failed bulk syncing leaves to Supabase:', err);
+  }
+};
+
+/**
+ * Purge all existing Employee, Department, Attendance, Leave, Consideration, Payroll & Review records in Supabase
+ */
+export const purgeAllSupabaseHRMSData = async () => {
+  if (!isSupabaseConfigured()) return;
+  try {
+    const client = getSupabaseClient();
+    await Promise.all([
+      client.from('employee_reviews').delete().neq('id', '__never__'),
+      client.from('attendance_records').delete().neq('id', '__never__'),
+      client.from('leave_requests').delete().neq('id', '__never__'),
+      client.from('consideration_requests').delete().neq('id', '__never__'),
+      client.from('payroll_records').delete().neq('id', '__never__'),
+      client.from('employees').delete().neq('id', '__never__'),
+      client.from('departments').delete().neq('id', '__never__'),
+    ]);
+  } catch (err) {
+    console.warn('Failed purging Supabase tables:', err);
+  }
+};
+
+/**
+ * Fetch Initial State from Supabase tables on Startup (ensures Local & Deployed apps display identical data)
  */
 export const loadInitialDataFromSupabase = async () => {
   if (!isSupabaseConfigured()) return null;
   try {
     const client = getSupabaseClient();
-    const [empRes, attRes, leaveRes, deptRes] = await Promise.all([
-      client.from('employees').select('*').limit(500),
-      client.from('attendance_records').select('*').order('date', { ascending: false }).limit(500),
-      client.from('leave_requests').select('*').limit(500),
-      client.from('departments').select('*').limit(100),
+    const [empRes, attRes, leaveRes, deptRes, revRes] = await Promise.all([
+      client.from('employees').select('*').limit(1000),
+      client.from('attendance_records').select('*').order('date', { ascending: false }).limit(2000),
+      client.from('leave_requests').select('*').limit(2000),
+      client.from('departments').select('*').limit(200),
+      client.from('employee_reviews').select('*').limit(1000),
     ]);
 
-    if (empRes.data && empRes.data.length > 0) {
-      const fetchedEmployees: Employee[] = empRes.data.map((row: any) => ({
-        id: row.id,
-        uid: row.uid || `uid_${row.id}`,
-        managerUid: row.manager_uid || 'uid_argos_admin',
-        fullName: row.full_name,
-        email: row.email || '',
-        phone: row.phone || '',
-        role: row.role || 'EMPLOYEE',
-        isSuperAdmin: row.is_super_admin || false,
-        designation: row.designation || 'Employee',
-        department: row.department || 'General',
-        managerId: row.manager_id || 'EMP-ADMIN',
-        managerName: row.manager_name || 'Root Admin',
-        status: row.status || 'Active',
-        employmentType: row.employment_type || 'Full-Time',
-        location: row.location || 'HQ',
-        joiningDate: row.joining_date || '2026-01-01',
-        probationEndDate: row.probation_end_date || '2026-04-01',
-        dob: row.dob || '1995-01-01',
-        gender: row.gender || 'Other',
-        address: row.address || '',
-        emergencyContactName: row.emergency_contact_name || '',
-        emergencyContactPhone: row.emergency_contact_phone || '',
-        avatarUrl: row.avatar_url || '',
-        bankName: row.bank_name || '',
-        bankAccountNumber: row.bank_account_number || '',
-        ifscCode: row.ifsc_code || '',
-        panNumber: row.pan_number || '',
-        salary: row.salary_data || { baseSalary: 0, hra: 0, specialAllowance: 0, pfDeduction: 0, taxDeduction: 0, professionalTax: 0 },
-        leaveBalance: row.leave_balance_data || { casualTotal: 12, casualUsed: 0, sickTotal: 8, sickUsed: 0, earnedTotal: 15, earnedUsed: 0 },
-        salaryHistory: [],
-      }));
-
-      return {
-        employees: fetchedEmployees,
-        attendance: attRes.data || [],
-        leaves: leaveRes.data || [],
-        departments: deptRes.data || [],
-      };
+    if (empRes.error && deptRes.error) {
+      return null;
     }
+
+    const fetchedEmployees: Employee[] = (empRes.data || []).map((row: any) => ({
+      id: row.id,
+      uid: row.uid || `uid_${row.id}`,
+      managerUid: row.manager_uid || 'uid_argos_admin',
+      fullName: row.full_name,
+      email: row.email || '',
+      officialEmail: row.email || '',
+      phone: row.phone || '',
+      role: (row.role as UserRole) || UserRole.EMPLOYEE,
+      isSuperAdmin: row.is_super_admin || false,
+      designation: row.designation || 'Employee',
+      department: row.department || 'General',
+      managerId: row.manager_id || 'EMP-ADMIN',
+      managerName: row.manager_name || 'Argos Administrator',
+      status: row.status || 'Active',
+      employmentType: row.employment_type || 'Full-Time',
+      location: row.location || 'Main Atelier & HQ',
+      joiningDate: row.joining_date || '2026-01-01',
+      probationEndDate: row.probation_end_date || '2026-04-01',
+      dob: row.dob || '1995-01-01',
+      gender: row.gender || 'Other',
+      address: row.address || '',
+      emergencyContactName: row.emergency_contact_name || '',
+      emergencyContactPhone: row.emergency_contact_phone || '',
+      avatarUrl: row.avatar_url || '',
+      bankName: row.bank_name || '',
+      bankAccountNumber: row.bank_account_number || '',
+      ifscCode: row.ifsc_code || '',
+      panNumber: row.pan_number || '',
+      salary: row.salary_data || {
+        baseSalary: 0,
+        hra: 0,
+        specialAllowance: 0,
+        pfDeduction: 0,
+        taxDeduction: 0,
+        professionalTax: 0,
+      },
+      leaveBalance: row.leave_balance_data || {
+        casualTotal: 12,
+        casualUsed: 0,
+        sickTotal: 8,
+        sickUsed: 0,
+        earnedTotal: 15,
+        earnedUsed: 0,
+      },
+      salaryHistory: [],
+    }));
+
+    const fetchedDepartments: Department[] = (deptRes.data || []).map((row: any) => ({
+      id: row.id,
+      name: row.name,
+      code: row.code || row.name.slice(0, 3).toUpperCase(),
+      managerId: row.head_id || 'EMP-ADMIN',
+      managerName: row.head_name || 'Argos Administrator',
+      parentDepartmentId: null,
+      location: 'Main Atelier & HQ',
+      description: row.description || '',
+      annualBudget: 10000000,
+    }));
+
+    const fetchedAttendance: AttendanceRecord[] = (attRes.data || []).map((row: any) => ({
+      id: row.id,
+      employeeId: row.employee_id,
+      employeeCode: row.employee_id,
+      employeeName: row.employee_name || row.employee_id,
+      department: row.department || 'General',
+      managerId: row.manager_id || 'EMP-ADMIN',
+      uid: `uid_${row.employee_id}`,
+      managerUid: 'uid_argos_admin',
+      date: row.date,
+      checkIn: row.check_in || null,
+      checkOut: row.check_out || null,
+      punchIn: row.punch_in || row.check_in || null,
+      punchOut: row.punch_out || row.check_out || null,
+      status: row.status || 'Present',
+      isLate: Boolean(row.is_late),
+      lateMinutes: Number(row.late_minutes) || 0,
+      earlyDepartureMinutes: 0,
+      workingHours: Number(row.working_hours) || 0,
+      overtimeHours: Number(row.overtime_hours) || 0,
+      source: row.source || 'WEB',
+      isManualCorrection: Boolean(row.is_manual_correction),
+      manualCorrectionReason: row.manual_correction_reason || undefined,
+      notes: row.notes || '',
+    }));
+
+    const fetchedLeaves: LeaveRequest[] = (leaveRes.data || []).map((row: any) => ({
+      id: row.id,
+      employeeId: row.employee_id,
+      employeeName: row.employee_name || row.employee_id,
+      department: row.department || 'General',
+      managerId: 'EMP-ADMIN',
+      uid: `uid_${row.employee_id}`,
+      managerUid: 'uid_argos_admin',
+      leaveType: row.leave_type || 'Casual',
+      startDate: row.start_date,
+      endDate: row.end_date,
+      days: Number(row.days_count) || 1,
+      isHalfDay: Number(row.days_count) === 0.5,
+      reason: row.reason || '',
+      appliedBy: row.employee_name || row.employee_id,
+      status: row.status || 'Approved',
+      appliedOn: row.applied_at || row.start_date,
+      createdAt: row.applied_at || row.start_date,
+      decidedAt: row.decided_at || undefined,
+      decidedBy: row.decided_by || undefined,
+      decisionNote: row.decision_note || undefined,
+    }));
+
+    const fetchedReviews: EmployeeReview[] = (revRes.data || []).map((row: any) => ({
+      id: row.id,
+      targetEmployeeId: row.target_employee_id,
+      targetEmployeeName: row.target_employee_name || row.target_employee_id,
+      targetEmployeeDepartment: row.target_employee_department || 'General',
+      targetEmployeeDesignation: row.target_employee_designation || 'Employee',
+      reviewerId: row.reviewer_employee_id,
+      reviewerEmployeeId: row.reviewer_employee_id,
+      reviewerName: row.reviewer_employee_name || row.reviewer_employee_id,
+      reviewerEmployeeName: row.reviewer_employee_name || row.reviewer_employee_id,
+      reviewerDepartment: row.reviewer_department || 'General',
+      reviewerDesignation: row.reviewer_designation || 'Employee',
+      reviewType: row.review_type === 'NEGATIVE' ? 'NEGATIVE' : 'POSITIVE',
+      starCount: Math.min(5, Math.max(1, Number(row.star_count) || 1)),
+      category: row.category || 'Other',
+      customCategory: row.custom_category || undefined,
+      reason: row.reason || '',
+      status: row.status || 'PENDING',
+      submittedAt: row.submitted_at || new Date().toISOString().slice(0, 16).replace('T', ' '),
+      decidedAt: row.decided_at || undefined,
+      decidedBy: row.decided_by || undefined,
+      decisionNote: row.decision_note || undefined,
+    }));
+
+    return {
+      employees: fetchedEmployees,
+      departments: fetchedDepartments,
+      attendance: fetchedAttendance,
+      leaves: fetchedLeaves,
+      reviews: fetchedReviews,
+    };
   } catch (err) {
     console.warn('Supabase fetch error:', err);
   }

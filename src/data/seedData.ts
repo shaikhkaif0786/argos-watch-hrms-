@@ -117,74 +117,7 @@ export const INITIAL_COMPANY_SETTINGS: CompanySettings = {
   ],
 };
 
-export const INITIAL_DEPARTMENTS: Department[] = [
-  {
-    id: 'DEPT-HR',
-    name: 'Human Resource',
-    code: 'HR',
-    managerId: 'EMP-1001',
-    managerName: 'Chaitanya Katare',
-    parentDepartmentId: null,
-    location: 'Main Atelier & HQ',
-    description: 'People strategy, performance management, culture, recruitment, and payroll governance.',
-    annualBudget: 12500000,
-  },
-  {
-    id: 'DEPT-OPS',
-    name: 'Operations',
-    code: 'OPS',
-    managerId: 'EMP-1003',
-    managerName: 'Sohail Derolwala',
-    parentDepartmentId: null,
-    location: 'Main Atelier & HQ',
-    description: 'Core business operations, vendor development, supply chain, and cross-functional execution.',
-    annualBudget: 24000000,
-  },
-  {
-    id: 'DEPT-INV',
-    name: 'Inventory',
-    code: 'INV',
-    managerId: 'EMP-1003',
-    managerName: 'Sohail Derolwala',
-    parentDepartmentId: 'DEPT-OPS',
-    location: 'Inventory Hub',
-    description: 'Watch components, movement stock control, SKU tracking, and warehouse coordination.',
-    annualBudget: 16500000,
-  },
-  {
-    id: 'DEPT-ACC',
-    name: 'Accounts',
-    code: 'ACC',
-    managerId: 'EMP-1001',
-    managerName: 'Chaitanya Katare',
-    parentDepartmentId: 'DEPT-HR',
-    location: 'Main Atelier & HQ',
-    description: 'Financial accounting, taxation, invoicing, ledger reconciliation, and payroll disbursement.',
-    annualBudget: 9800000,
-  },
-  {
-    id: 'DEPT-APD',
-    name: 'Assembling-Packaging/Dispatch',
-    code: 'APD',
-    managerId: 'EMP-1002',
-    managerName: 'Husein Kakajiwala',
-    parentDepartmentId: 'DEPT-OPS',
-    location: 'Production & Dispatch Unit',
-    description: 'Watch assembly, quality inspection, luxury packaging, and nationwide order dispatch.',
-    annualBudget: 28500000,
-  },
-  {
-    id: 'DEPT-STR',
-    name: 'Strategic Growth',
-    code: 'STR',
-    managerId: 'EMP-1004',
-    managerName: 'Anoshi Khan',
-    parentDepartmentId: null,
-    location: 'Main Atelier & HQ',
-    description: 'Brand partnerships, revenue expansion, market strategy, and collector community growth.',
-    annualBudget: 19000000,
-  },
-];
+export const INITIAL_DEPARTMENTS: Department[] = [];
 
 export const INITIAL_EMPLOYEES: Employee[] = [];
 
@@ -215,29 +148,10 @@ export const INITIAL_POLICIES: CompanyPolicy[] = [
         version: 'v2.4',
         updatedAt: '2026-04-01',
         summary: 'Defined explicit First-Half and Second-Half timings and Consideration link.',
-        updatedBy: 'Chaitanya Katare',
+        updatedBy: 'Argos Administrator',
       },
     ],
-    acknowledgements: [
-      {
-        employeeId: 'EMP-1001',
-        employeeName: 'Chaitanya Katare',
-        version: 'v2.4',
-        acknowledgedAt: '2026-04-01',
-      },
-      {
-        employeeId: 'EMP-1002',
-        employeeName: 'Husein Kakajiwala',
-        version: 'v2.4',
-        acknowledgedAt: '2026-04-02',
-      },
-      {
-        employeeId: 'EMP-1003',
-        employeeName: 'Sohail Derolwala',
-        version: 'v2.4',
-        acknowledgedAt: '2026-04-02',
-      },
-    ],
+    acknowledgements: [],
   },
   {
     id: 'POL-002',
@@ -257,17 +171,10 @@ export const INITIAL_POLICIES: CompanyPolicy[] = [
         version: 'v3.0',
         updatedAt: '2026-01-01',
         summary: 'Enabled HR on-behalf leave filing and half-day session selection.',
-        updatedBy: 'Chaitanya Katare',
+        updatedBy: 'Argos Administrator',
       },
     ],
-    acknowledgements: [
-      {
-        employeeId: 'EMP-1007',
-        employeeName: 'Kavita Lelinwala',
-        version: 'v3.0',
-        acknowledgedAt: '2026-01-05',
-      },
-    ],
+    acknowledgements: [],
   },
   {
     id: 'POL-003',
@@ -281,13 +188,13 @@ export const INITIAL_POLICIES: CompanyPolicy[] = [
     summary:
       'Security, dust-free assembly handling, and movement serial reconciliation guidelines across Inventory and Dispatch units.',
     content:
-      'All watch movements, dials, and packaged timepieces must be logged by Inventory (Aliasger Channiwala & Mayur Israni) prior to handover to Assembling-Packaging/Dispatch (Husein Kakajiwala).',
+      'All watch movements, dials, and packaged timepieces must be logged by Inventory prior to handover to Assembling-Packaging/Dispatch.',
     versions: [
       {
         version: 'v1.5',
         updatedAt: '2026-06-01',
         summary: 'Updated batch handover protocol.',
-        updatedBy: 'Sohail Derolwala',
+        updatedBy: 'Argos Administrator',
       },
     ],
     acknowledgements: [],
@@ -439,27 +346,5 @@ export const INITIAL_ACTIVITY_LOGS: ActivityLogEntry[] = [
 
 export const INITIAL_BIRTHDAYS: BirthdayCelebrationRecord[] = [];
 
-export const INITIAL_REVIEWS: EmployeeReview[] = [
-  {
-    id: 'REV-1001',
-    targetEmployeeId: 'EMP-ADMIN',
-    targetEmployeeName: 'Argos Administrator',
-    targetEmployeeDepartment: 'Administration',
-    targetEmployeeDesignation: 'Super Administrator',
-    reviewerId: 'EMP-1008',
-    reviewerEmployeeId: 'EMP-1008',
-    reviewerName: 'Rahul Sharma',
-    reviewerEmployeeName: 'Rahul Sharma',
-    reviewerDepartment: 'Assembling-Packaging/Dispatch',
-    reviewerDesignation: 'Precision Assembly Technician',
-    reviewType: 'POSITIVE',
-    starCount: 5,
-    category: 'Leadership',
-    reason: 'Exemplary leadership during the high-volume Q3 atelier launch. Always supportive and approachable.',
-    status: 'APPROVED',
-    submittedAt: '2026-10-04 14:30',
-    decidedAt: '2026-10-04 15:00',
-    decidedBy: 'Argos Administrator',
-    decisionNote: 'Verified and approved for publication.',
-  },
-];
+export const INITIAL_REVIEWS: EmployeeReview[] = [];
+

@@ -107,8 +107,39 @@ export function PeopleModule() {
     generateAndSaveLetter,
     departments,
     confirmEmployeeProbation,
+    importZohoDataArchive,
+    purgeAllHRMSData,
     addToast,
   } = useHRMS();
+
+  // Zoho Backup ZIP (data001.zip) Import & Supabase Sync State
+  const [showZohoImportModal, setShowZohoImportModal] = useState(false);
+  const [zohoZipPassword, setZohoZipPassword] = useState('');
+  const [zohoCustomFiles, setZohoCustomFiles] = useState<FileList | null>(null);
+  const [zohoImporting, setZohoImporting] = useState(false);
+  const [zohoImportStatusMsg, setZohoImportStatusMsg] = useState<{
+    type: 'info' | 'error' | 'success';
+    text: string;
+  } | null>(null);
+
+  const handleRunZohoImport = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setZohoImporting(true);
+    setZohoImportStatusMsg(null);
+    const res = await importZohoDataArchive({
+      password: zohoZipPassword.trim() || undefined,
+      customFiles: zohoCustomFiles || undefined,
+    });
+    setZohoImporting(false);
+    if (res.success) {
+      setZohoImportStatusMsg({ type: 'success', text: res.message });
+      setTimeout(() => {
+        setShowZohoImportModal(false);
+      }, 1200);
+    } else {
+      setZohoImportStatusMsg({ type: 'error', text: res.message });
+    }
+  };
 
   // Top Section Tab (Active Employees vs Employee Archive)
   const [activeDirectoryTab, setActiveDirectoryTab] = useState<'ACTIVE' | 'ARCHIVE'>('ACTIVE');
@@ -2685,6 +2716,19 @@ export function PeopleModule() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
+          {isHRAdmin && (
+            <button
+              type="button"
+              onClick={() => {
+                setZohoImportStatusMsg(null);
+                setShowZohoImportModal(true);
+              }}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-[#4E1617] hover:bg-[#380F10] text-[#F2F2F2] text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Import Backup ZIP (data001.zip) & Sync Supabase
+            </button>
+          )}
           <ExportDropdown
             data={activeDirectoryTab === 'ACTIVE' ? scopedEmployees : archivedEmployees}
             filename={activeDirectoryTab === 'ACTIVE' ? 'argos_watch_employees' : 'argos_watch_employee_archive'}
@@ -2701,6 +2745,137 @@ export function PeopleModule() {
           )}
         </div>
       </div>
+
+      {/* Zoho Backup ZIP (data001.zip) Ready-to-Import Banner when Directory is Empty */}
+      {isHRAdmin && allEmployees.length === 0 && (
+        <div className="bg-white border-2 border-[#164C38] rounded-2xl p-5 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2">
+              <span className="px-2.5 py-0.5 rounded-md bg-[#164C38] text-white text-[10px] font-bold uppercase tracking-wider">
+                Clean Database Ready · Zoho People Archive Detected
+              </span>
+              <span className="text-xs font-mono font-semibold text-[#525854]">
+                /assets/aistudio/data001_56b60b17.zip (24 CSV Tables)
+              </span>
+            </div>
+            <h2 className="text-sm sm:text-base font-bold text-[#141A17]">
+              All Previous Employee & Department Data Has Been Purged — Ready to Import `data001.zip`
+            </h2>
+            <p className="text-xs text-[#525854] max-w-3xl leading-relaxed">
+              Your attached Zoho People backup archive (<code className="font-mono text-[#141A17]">data001.zip</code>) contains 24 CSV tables (Departments, Designations, Employees, Work Experience, Education, Dependents, Leave Records, Exit/Resignation/Termination details, KRAs, and Skills) encrypted with a Zoho backup password. Enter the ZIP password or select extracted CSVs to import and sync everything directly to <strong>Supabase</strong> for both local and deployed apps.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                setZohoImportStatusMsg(null);
+                setShowZohoImportModal(true);
+              }}
+              className="px-4 py-2.5 rounded-xl bg-[#164C38] hover:bg-[#0F3627] text-white text-xs font-bold transition-colors cursor-pointer flex items-center gap-2 shadow-xs"
+            >
+              <Lock className="w-3.5 h-3.5" />
+              <span>Unlock & Import data001.zip to Supabase</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Unlock & Import Zoho Backup ZIP (data001.zip) or CSVs to Supabase */}
+      <ModalShell
+        isOpen={showZohoImportModal}
+        onClose={() => setShowZohoImportModal(false)}
+        title="Import Zoho Backup ZIP (data001.zip) & Sync to Supabase"
+        subtitle="Decrypts /assets/aistudio/data001_56b60b17.zip (or uploaded CSVs) in-browser and upserts all Departments, Employees, Leave History, and Attendance into Supabase."
+      >
+        <form onSubmit={handleRunZohoImport} className="space-y-4 text-xs">
+          <div className="p-3.5 rounded-xl bg-[#F2F2F2] border border-[#CBCBCB] space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-[#141A17]">
+                Bundled Source Archive: <code className="font-mono">data001_56b60b17.zip</code>
+              </span>
+              <span className="px-2 py-0.5 rounded bg-[#164C38]/15 text-[#164C38] font-mono text-[10px] font-bold">
+                24 CSV Files Detected
+              </span>
+            </div>
+            <p className="text-[11px] text-[#525854]">
+              Includes <code className="font-mono">Department1.csv</code>, <code className="font-mono">Designation1.csv</code>, <code className="font-mono">Employee1.csv</code>, <code className="font-mono">Work_experience_1.csv</code>, <code className="font-mono">Education_Details_2.csv</code>, <code className="font-mono">Leave1.csv</code>, <code className="font-mono">Exit_Details.csv</code>, <code className="font-mono">Resignation.csv</code>, and <code className="font-mono">Termination.csv</code>.
+            </p>
+          </div>
+
+          <div>
+            <label className="block font-bold uppercase text-[#525854] mb-1">
+              Zoho Backup ZIP Password (for data001.zip)
+            </label>
+            <input
+              type="password"
+              value={zohoZipPassword}
+              onChange={(e) => setZohoZipPassword(e.target.value)}
+              placeholder="Enter password from your Zoho People backup email..."
+              className="w-full px-3.5 py-2.5 bg-white border border-[#CBCBCB] rounded-xl font-mono text-xs focus:outline-none focus:border-[#164C38]"
+            />
+            <span className="text-[11px] text-[#525854] mt-1 block">
+              Zoho People encrypts exported <code className="font-mono">data001.zip</code> archives with a password sent to the admin email.
+            </span>
+          </div>
+
+          <div className="pt-2 border-t border-[#CBCBCB]">
+            <label className="block font-bold uppercase text-[#525854] mb-1">
+              Or Upload Unlocked ZIP / Extracted CSV Files (Optional)
+            </label>
+            <input
+              type="file"
+              multiple
+              accept=".zip,.csv"
+              onChange={(e) => setZohoCustomFiles(e.target.files)}
+              className="w-full px-3 py-2 bg-[#F2F2F2] border border-[#CBCBCB] rounded-xl text-xs"
+            />
+            <span className="text-[11px] text-[#525854] mt-1 block">
+              Leave empty to use the bundled <code className="font-mono">data001.zip</code> file, or select unlocked <code className="font-mono">.csv</code> / <code className="font-mono">.zip</code> files from your computer.
+            </span>
+          </div>
+
+          {zohoImportStatusMsg && (
+            <div
+              className={`p-3 rounded-xl border text-xs font-semibold ${
+                zohoImportStatusMsg.type === 'success'
+                  ? 'bg-[#164C38]/10 border-[#164C38]/30 text-[#164C38]'
+                  : zohoImportStatusMsg.type === 'error'
+                  ? 'bg-[#4E1617]/10 border-[#4E1617]/30 text-[#4E1617]'
+                  : 'bg-[#F2F2F2] border-[#CBCBCB] text-[#141A17]'
+              }`}
+            >
+              {zohoImportStatusMsg.text}
+            </div>
+          )}
+
+          <div className="flex items-center justify-between pt-3 border-t border-[#CBCBCB]">
+            <button
+              type="button"
+              onClick={() => purgeAllHRMSData()}
+              className="px-3 py-2 rounded-lg border border-[#4E1617]/30 text-[#4E1617] hover:bg-[#4E1617]/5 font-semibold cursor-pointer"
+            >
+              Purge All Existing Data
+            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowZohoImportModal(false)}
+                className="px-3.5 py-2 rounded-lg font-semibold text-[#525854] cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={zohoImporting}
+                className="px-4 py-2 rounded-lg bg-[#164C38] hover:bg-[#0F3627] text-white font-bold cursor-pointer disabled:opacity-50"
+              >
+                {zohoImporting ? 'Decrypting & Syncing to Supabase...' : 'Import & Sync to Supabase'}
+              </button>
+            </div>
+          </div>
+        </form>
+      </ModalShell>
 
       {/* Admin / HR Segmented Tabs: Active Employees vs Employee Archive */}
       {isHRAdmin && activeModule !== 'my-team' && (

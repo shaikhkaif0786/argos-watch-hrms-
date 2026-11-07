@@ -91,10 +91,25 @@ import {
 } from '../lib/supabase';
 import {
   syncEmployeeToSupabase,
+  syncAllEmployeesToSupabase,
+  deleteEmployeeFromSupabase,
+  syncDepartmentToSupabase,
+  syncAllDepartmentsToSupabase,
+  deleteDepartmentFromSupabase,
   syncAttendanceRecordToSupabase,
+  syncAllAttendanceToSupabase,
+  syncLeaveRequestToSupabase,
+  syncAllLeavesToSupabase,
   loadInitialDataFromSupabase,
   syncReviewToSupabase,
+  purgeAllSupabaseHRMSData,
 } from '../lib/supabaseSync';
+import {
+  extractCsvFilesFromZipBuffer,
+  parseCsvToObjects,
+  transformCsvMapToHRMSData,
+  ZohoImportSummary,
+} from '../lib/zohoZipImporter';
 import {
   TODAY_DATE,
   INITIAL_COMPANY_SETTINGS,
@@ -433,6 +448,17 @@ interface HRMSContextValue {
   lockAppNow: () => void;
   resetAppLockWithIdentity: (ver: { email: string; employeeId: string; newPin: string }) => Promise<{ success: boolean; error?: string }>;
 
+  // Zoho Backup ZIP / CSV Import & Supabase Sync
+  importZohoDataArchive: (options?: {
+    password?: string;
+    customFiles?: FileList | File[];
+  }) => Promise<{
+    success: boolean;
+    message: string;
+    summary?: ZohoImportSummary;
+  }>;
+  purgeAllHRMSData: () => Promise<void>;
+
   // Normalized Module Adapter Properties
   [key: string]: any;
 }
@@ -510,12 +536,13 @@ export const DEFAULT_ADMIN_USER_ACCESS: UserAccessRecord = {
   adminNote: 'Primary Super Administrator (Clean Installation)',
 };
 
-// One-time fresh installation cache wipe: guarantees all obsolete seeded employee data is completely purged
+// One-time fresh installation cache wipe: guarantees all obsolete seeded employee & department data is completely purged
 if (typeof window !== 'undefined') {
-  const FRESH_INSTALL_FLAG = 'hrms_fresh_clean_installation_v3';
+  const FRESH_INSTALL_FLAG = 'hrms_fresh_clean_installation_v4';
   if (localStorage.getItem(FRESH_INSTALL_FLAG) !== 'true') {
     const keysToPurge = [
       'hrms_persisted_employees',
+      'hrms_persisted_departments',
       'hrms_persisted_user_access',
       'hrms_persisted_attendance',
       'hrms_persisted_leaves',
@@ -526,6 +553,7 @@ if (typeof window !== 'undefined') {
       'hrms_persisted_letter_history',
       'hrms_persisted_internships',
       'hrms_persisted_birthdays',
+      'hrms_persisted_reviews',
       'hrms_persisted_mobile_users',
       'hrms_persisted_mobile_locations',
       'hrms_persisted_activity_logs',
@@ -753,6 +781,121 @@ export const HRMSProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     localStorage.setItem('hrms_persisted_reviews', JSON.stringify(reviews));
   }, [reviews]);
+
+  // Hydrate all records from Supabase on mount so both local and deployed apps share the exact same live database state
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      if (!isSupabaseConfigured()) return;
+
+      // Ensure any old demo/seeded records in Supabase before the Zoho import are cleared once
+      const SUPABASE_CLEAN_WIPE_FLAG = 'hrms_supabase_clean_wipe_v1';
+      const ZOHO_IMPORTED_FLAG = 'hrms_zoho_archive_imported_v1';
+      if (
+        localStorage.getItem(SUPABASE_CLEAN_WIPE_FLAG) !== 'true' &&
+        localStorage.getItem(ZOHO_IMPORTED_FLAG) !== 'true'
+      ) {
+        const remotePrecheck = await loadInitialDataFromSupabase();
+        const hasLegacySeedIds =
+          remotePrecheck?.employees?.some((e) =>
+            ['EMP-1001', 'EMP-1002', 'EMP-1003', 'EMP-1004', 'EMP-1005'].includes(e.id)
+          ) ||
+          remotePrecheck?.departments?.some((d) =>
+            ['DEPT-01', 'DEPT-02', 'DEPT-03', 'DEPT-04'].includes(d.id)
+          );
+        if (hasLegacySeedIds) {
+          await purgeAllSupabaseHRMSData();
+        }
+        localStorage.setItem(SUPABASE_CLEAN_WIPE_FLAG, 'true');
+      }
+
+      const remote = await loadInitialDataFromSupabase();
+      if (!isMounted || !remote) return;
+
+      if (remote.departments && remote.departments.length > 0) {
+        setDepartments(remote.departments);
+      }
+      if (remote.employees && remote.employees.length > 0) {
+        setAllEmployees(remote.employees);
+        setUserAccessList((prev) => {
+          const existingById = new Map<string, UserAccessRecord>(
+            prev.map((u) => [u.employeeId, u] as [string, UserAccessRecord])
+          );
+          return remote.employees!.map((emp): UserAccessRecord => {
+            const existing = existingById.get(emp.id);
+            if (existing) {
+              return {
+                ...existing,
+                fullName: emp.fullName,
+                email: emp.email,
+                department: emp.department,
+                designation: emp.designation,
+                managerId: emp.managerId,
+                managerName: emp.managerName,
+              };
+            }
+            const roleId =
+              emp.role === UserRole.ADMIN
+                ? 'ROLE-ADMIN'
+                : emp.role === UserRole.HR
+                ? 'ROLE-HR'
+                : emp.role === UserRole.MANAGER
+                ? 'ROLE-MANAGER'
+                : 'ROLE-EMPLOYEE';
+            return {
+              employeeId: emp.id,
+              fullName: emp.fullName,
+              email: emp.email,
+              role: emp.role,
+              roleId,
+              roleName:
+                emp.role === UserRole.ADMIN
+                  ? 'Admin'
+                  : emp.role === UserRole.HR
+                  ? 'HR'
+                  : emp.role === UserRole.MANAGER
+                  ? 'Manager'
+                  : 'Employee',
+              accessLevel:
+                emp.role === UserRole.ADMIN || emp.role === UserRole.HR ? 'Controller' : 'Viewer',
+              accountStatus: emp.status === 'Exited' || emp.status === 'Inactive' ? 'Suspended' : 'Active',
+              department: emp.department,
+              designation: emp.designation,
+              managerId: emp.managerId,
+              managerName: emp.managerName,
+              lastLogin: 'Synced from Supabase',
+              invitationStatus: 'Accepted',
+              modulePermissions: getDefaultPermissionsForRole(
+                emp.role,
+                emp.role === UserRole.ADMIN || emp.role === UserRole.HR ? 'Controller' : 'Viewer'
+              ),
+              permissionOverrides: {},
+              allowedWorkspaces:
+                emp.role === UserRole.ADMIN
+                  ? ['OWN', 'ADMIN', 'HR']
+                  : emp.role === UserRole.HR
+                  ? ['OWN', 'HR']
+                  : ['OWN'],
+              updatedAt: TODAY_DATE,
+              updatedBy: 'Supabase Sync',
+            };
+          });
+        });
+      }
+      if (remote.attendance && remote.attendance.length > 0) {
+        setAttendance(remote.attendance);
+      }
+      if (remote.leaves && remote.leaves.length > 0) {
+        setLeaves(remote.leaves);
+      }
+      if (remote.reviews && remote.reviews.length > 0) {
+        setReviews(remote.reviews);
+      }
+    })();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Root-Level HR & Role Sync: Whenever the active persona employee's assigned role changes in userAccessList,
   // immediately sync currentRole and activeWorkspace so HR/Admin navigation and modules unlock immediately.
@@ -2812,6 +2955,7 @@ export const HRMSProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     setLeaves((prev) => [newLeave, ...prev]);
+    syncLeaveRequestToSupabase(newLeave);
 
     if (canAutoApprove) {
       setAllEmployees((prev) =>
@@ -2929,7 +3073,7 @@ export const HRMSProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
 
-      const nextStatus = status === 'Approved' ? 'PENDING_HR' : 'REJECTED';
+      const nextStatus: LeaveRequest['status'] = status === 'Approved' ? 'PENDING_HR' : 'REJECTED';
       const noteText =
         decisionNote.trim() ||
         (status === 'Approved'
@@ -2950,7 +3094,7 @@ export const HRMSProvider: React.FC<{ children: React.ReactNode }> = ({ children
               timestamp: (l.createdAt || new Date().toISOString()).slice(0, 16).replace('T', ' '),
             },
           ];
-          return {
+          const updatedLeave: LeaveRequest = {
             ...l,
             status: nextStatus,
             managerApprovedBy: status === 'Approved' ? currentEmployee.fullName : l.managerApprovedBy,
@@ -2966,16 +3110,18 @@ export const HRMSProvider: React.FC<{ children: React.ReactNode }> = ({ children
             approvalHistory: [
               ...prevHist,
               {
-                stage: 'MANAGER_REVIEW',
+                stage: 'MANAGER_REVIEW' as const,
                 actorId: currentEmployee.id,
                 actorName: currentEmployee.fullName,
                 actorRole: UserRole.MANAGER,
-                action: status === 'Approved' ? 'APPROVED' : 'REJECTED',
+                action: (status === 'Approved' ? 'APPROVED' : 'REJECTED') as 'APPROVED' | 'REJECTED',
                 note: noteText,
                 timestamp: nowFormatted,
               },
             ],
           };
+          syncLeaveRequestToSupabase(updatedLeave);
+          return updatedLeave;
         })
       );
 
@@ -3040,7 +3186,7 @@ export const HRMSProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     // HR / Admin Final Review Stage
-    const finalStatus = status === 'Approved' ? 'APPROVED' : 'REJECTED';
+    const finalStatus: LeaveRequest['status'] = status === 'Approved' ? 'APPROVED' : 'REJECTED';
     const hrNote =
       decisionNote.trim() ||
       (status === 'Approved'
@@ -3061,7 +3207,7 @@ export const HRMSProvider: React.FC<{ children: React.ReactNode }> = ({ children
             timestamp: (l.createdAt || new Date().toISOString()).slice(0, 16).replace('T', ' '),
           },
         ];
-        return {
+        const updatedLeave: LeaveRequest = {
           ...l,
           status: finalStatus,
           hrApprovedBy: status === 'Approved' ? currentEmployee.fullName : l.hrApprovedBy,
@@ -3077,16 +3223,18 @@ export const HRMSProvider: React.FC<{ children: React.ReactNode }> = ({ children
           approvalHistory: [
             ...prevHist,
             {
-              stage: 'HR_FINAL_REVIEW',
+              stage: 'HR_FINAL_REVIEW' as const,
               actorId: currentEmployee.id,
               actorName: currentEmployee.fullName,
               actorRole: currentRole,
-              action: status === 'Approved' ? 'APPROVED' : 'REJECTED',
+              action: (status === 'Approved' ? 'APPROVED' : 'REJECTED') as 'APPROVED' | 'REJECTED',
               note: hrNote,
               timestamp: nowFormatted,
             },
           ],
         };
+        syncLeaveRequestToSupabase(updatedLeave);
+        return updatedLeave;
       })
     );
 
@@ -4480,6 +4628,7 @@ export const HRMSProvider: React.FC<{ children: React.ReactNode }> = ({ children
       id: `DEPT-${dept.code.toUpperCase()}`,
     };
     setDepartments((prev) => [...prev, created]);
+    syncDepartmentToSupabase(created);
     appendAuditLog(
       `Created Department: ${created.name}`,
       'People',
@@ -4498,9 +4647,11 @@ export const HRMSProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     const target = departments.find((d) => d.id === deptId);
     if (!target) return;
+    const updatedDept = { ...target, ...updates };
     setDepartments((prev) =>
-      prev.map((d) => (d.id === deptId ? { ...d, ...updates } : d))
+      prev.map((d) => (d.id === deptId ? updatedDept : d))
     );
+    syncDepartmentToSupabase(updatedDept);
     appendAuditLog(
       `Updated Department Details: ${target.name}`,
       'Departments',
@@ -4531,6 +4682,7 @@ export const HRMSProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     setDepartments((prev) => prev.filter((d) => d.id !== deptId));
+    deleteDepartmentFromSupabase(deptId);
     appendAuditLog(
       `Archived/Deleted Department: ${target.name}`,
       'Departments',
@@ -5997,6 +6149,209 @@ export const HRMSProvider: React.FC<{ children: React.ReactNode }> = ({ children
     );
   };
 
+  // Purge all existing employee, department, attendance, leave, payroll, and review data locally + in Supabase
+  const purgeAllHRMSData = async () => {
+    setAllEmployees([]);
+    setDepartments([]);
+    setAttendance([]);
+    setLeaves([]);
+    setConsiderations([]);
+    setPayrolls([]);
+    setDocuments([]);
+    setLetters([]);
+    setLetterHistory([]);
+    setInternships([]);
+    setBirthdays([]);
+    setReviews([]);
+    setUserAccessList([]);
+    setMobileAppUsers([]);
+
+    const keysToPurge = [
+      'hrms_persisted_employees',
+      'hrms_persisted_departments',
+      'hrms_persisted_user_access',
+      'hrms_persisted_attendance',
+      'hrms_persisted_leaves',
+      'hrms_persisted_considerations',
+      'hrms_persisted_payrolls',
+      'hrms_persisted_documents',
+      'hrms_persisted_letters',
+      'hrms_persisted_letter_history',
+      'hrms_persisted_internships',
+      'hrms_persisted_birthdays',
+      'hrms_persisted_reviews',
+      'hrms_persisted_mobile_users',
+    ];
+    keysToPurge.forEach((k) => localStorage.removeItem(k));
+    await purgeAllSupabaseHRMSData();
+    addToast(
+      'All HRMS Data Purged',
+      'All employee, department, attendance, and leave records were cleared locally and in Supabase.',
+      'info'
+    );
+  };
+
+  // Import from bundled Zoho Backup ZIP (/assets/aistudio/data001_56b60b17.zip) or uploaded ZIP/CSV files and sync to Supabase
+  const importZohoDataArchive = async (options?: {
+    password?: string;
+    customFiles?: FileList | File[];
+  }): Promise<{
+    success: boolean;
+    message: string;
+    summary?: ZohoImportSummary;
+  }> => {
+    try {
+      const filesMap: Record<string, string> = {};
+      const customFilesArr = options?.customFiles ? Array.from(options.customFiles) : [];
+
+      if (customFilesArr.length > 0) {
+        for (const file of customFilesArr) {
+          if (file.name.toLowerCase().endsWith('.zip')) {
+            const buf = await file.arrayBuffer();
+            const extracted = await extractCsvFilesFromZipBuffer(buf, options?.password?.trim());
+            Object.entries(extracted).forEach(([k, v]) => {
+              filesMap[k] = v;
+            });
+          } else if (file.name.toLowerCase().endsWith('.csv')) {
+            const text = await file.text();
+            if (text.trim().length > 0) {
+              filesMap[file.name] = text;
+            }
+          }
+        }
+      } else {
+        // Fetch the user-provided ZIP file bundled at /assets/aistudio/data001_56b60b17.zip
+        const res = await fetch('/assets/aistudio/data001_56b60b17.zip');
+        if (!res.ok) {
+          return {
+            success: false,
+            message: `Could not fetch bundled archive (/assets/aistudio/data001_56b60b17.zip): HTTP ${res.status}`,
+          };
+        }
+        const zipBuf = await res.arrayBuffer();
+        const extracted = await extractCsvFilesFromZipBuffer(zipBuf, options?.password?.trim());
+        Object.entries(extracted).forEach(([k, v]) => {
+          filesMap[k] = v;
+        });
+      }
+
+      if (Object.keys(filesMap).length === 0) {
+        return {
+          success: false,
+          message:
+            'No readable CSV tables were extracted. Please verify the Zoho backup password or select extracted CSV files.',
+        };
+      }
+
+      const imported = transformCsvMapToHRMSData(filesMap);
+
+      // Replace existing state cleanly
+      setDepartments(imported.departments);
+      setAllEmployees(imported.employees);
+      setLeaves(imported.leaves);
+      setAttendance(imported.attendance);
+
+      // Build corresponding user access records for all imported employees
+      const importedAccess: UserAccessRecord[] = imported.employees.map((emp) => {
+        const roleId =
+          emp.role === UserRole.ADMIN
+            ? 'ROLE-ADMIN'
+            : emp.role === UserRole.HR
+            ? 'ROLE-HR'
+            : emp.role === UserRole.MANAGER
+            ? 'ROLE-MANAGER'
+            : 'ROLE-EMPLOYEE';
+        return {
+          employeeId: emp.id,
+          fullName: emp.fullName,
+          email: emp.email,
+          role: emp.role,
+          roleId,
+          roleName:
+            emp.role === UserRole.ADMIN
+              ? 'Admin'
+              : emp.role === UserRole.HR
+              ? 'HR'
+              : emp.role === UserRole.MANAGER
+              ? 'Manager'
+              : 'Employee',
+          accessLevel:
+            emp.role === UserRole.ADMIN || emp.role === UserRole.HR ? 'Controller' : 'Viewer',
+          accountStatus: emp.status === 'Exited' || emp.status === 'Inactive' ? 'Suspended' : 'Active',
+          department: emp.department,
+          designation: emp.designation,
+          managerId: emp.managerId,
+          managerName: emp.managerName,
+          lastLogin: 'Imported from Zoho Backup',
+          invitationStatus: 'Accepted',
+          modulePermissions: getDefaultPermissionsForRole(
+            emp.role,
+            emp.role === UserRole.ADMIN || emp.role === UserRole.HR ? 'Controller' : 'Viewer'
+          ),
+          permissionOverrides: {},
+          allowedWorkspaces:
+            emp.role === UserRole.ADMIN
+              ? ['OWN', 'ADMIN', 'HR']
+              : emp.role === UserRole.HR
+              ? ['OWN', 'HR']
+              : ['OWN'],
+          updatedAt: TODAY_DATE,
+          updatedBy: 'Zoho Backup Importer',
+        };
+      });
+      setUserAccessList(importedAccess);
+
+      // Persist to Supabase so both local and deployed apps show the exact same imported data
+      await purgeAllSupabaseHRMSData();
+      await syncAllDepartmentsToSupabase(imported.departments);
+      await syncAllEmployeesToSupabase(imported.employees);
+      await syncAllLeavesToSupabase(imported.leaves);
+      await syncAllAttendanceToSupabase(imported.attendance);
+
+      localStorage.setItem('hrms_zoho_archive_imported_v1', 'true');
+
+      appendAuditLog(
+        `Imported Zoho Backup Data & Synced to Supabase`,
+        'Settings',
+        `Departments: ${imported.departments.length} · Employees: ${imported.employees.length} · Leaves: ${imported.leaves.length} · Attendance: ${imported.attendance.length}`,
+        undefined,
+        'Empty Clean State',
+        `Synced ${imported.employees.length} Employees & ${imported.departments.length} Departments to Supabase`
+      );
+
+      addToast(
+        'Backup Data Imported & Synced to Supabase',
+        `Imported ${imported.employees.length} employees, ${imported.departments.length} departments, ${imported.leaves.length} leave records, and ${imported.attendance.length} attendance logs.`,
+        'success'
+      );
+
+      return {
+        success: true,
+        message: `Successfully imported ${imported.employees.length} employees, ${imported.departments.length} departments, ${imported.leaves.length} leaves, and ${imported.attendance.length} attendance records and synced to Supabase.`,
+        summary: imported,
+      };
+    } catch (err: any) {
+      if (err?.message === 'PASSWORD_REQUIRED') {
+        return {
+          success: false,
+          message:
+            'The provided data001.zip is encrypted with a Zoho People backup password. Please enter the ZIP password below to unlock and sync all 24 CSV tables to Supabase.',
+        };
+      }
+      if (err?.message === 'INVALID_PASSWORD') {
+        return {
+          success: false,
+          message:
+            'Incorrect Zoho backup password for data001.zip. Please check the password from your Zoho People backup email and try again.',
+        };
+      }
+      return {
+        success: false,
+        message: err?.message || 'Failed to import Zoho backup archive.',
+      };
+    }
+  };
+
   // Normalized reactive view adapters for modules
   const currentUser = useMemo(
     () => ({
@@ -6642,6 +6997,10 @@ export const HRMSProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
           setAllEmployees(updatedList);
           localStorage.setItem('hrms_persisted_employees', JSON.stringify(updatedList));
+          const updatedEmpObj = updatedList.find((e) => e.id === id);
+          if (updatedEmpObj) {
+            syncEmployeeToSupabase(updatedEmpObj);
+          }
 
           appendAuditLog(
             `Updated employee details: ${target?.fullName || id}`,
@@ -6945,6 +7304,8 @@ export const HRMSProvider: React.FC<{ children: React.ReactNode }> = ({ children
         unlockApp,
         lockAppNow,
         resetAppLockWithIdentity,
+        importZohoDataArchive,
+        purgeAllHRMSData,
       }}
     >
       {children}
