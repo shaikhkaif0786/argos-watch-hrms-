@@ -224,6 +224,8 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
         return <Users className="w-4 h-4" />;
       case 'people':
         return <Users className="w-4 h-4" />;
+      case 'reviews':
+        return <Award className="w-4 h-4" />;
       case 'attendance':
         return <UserCheck className="w-4 h-4" />;
       case 'leave':

@@ -36,6 +36,7 @@ export function getPrimaryNavForRole(role: UserRole): NavItemConfig[] {
       return [
         { id: 'dashboard', label: 'Dashboard' },
         { id: 'people', label: 'Employees' },
+        { id: 'reviews', label: 'Reviews' },
         { id: 'approvals', label: 'Approval Requests' },
         { id: 'attendance', label: 'Attendance' },
         { id: 'leave', label: 'Leave' },
@@ -55,6 +56,7 @@ export function getPrimaryNavForRole(role: UserRole): NavItemConfig[] {
       return [
         { id: 'dashboard', label: 'Dashboard' },
         { id: 'people', label: 'Employees' },
+        { id: 'reviews', label: 'Reviews' },
         { id: 'approvals', label: 'Approval Requests' },
         { id: 'attendance', label: 'Attendance' },
         { id: 'leave', label: 'Leave' },
@@ -73,6 +75,7 @@ export function getPrimaryNavForRole(role: UserRole): NavItemConfig[] {
       return [
         { id: 'dashboard', label: 'Dashboard' },
         { id: 'my-team', label: 'My Team' },
+        { id: 'reviews', label: 'Reviews' },
         { id: 'approvals', label: 'Approval Requests' },
         { id: 'attendance', label: 'Attendance' },
         { id: 'leave', label: 'Leave' },
@@ -88,6 +91,7 @@ export function getPrimaryNavForRole(role: UserRole): NavItemConfig[] {
     case UserRole.EMPLOYEE:
       return [
         { id: 'dashboard', label: 'Dashboard' },
+        { id: 'reviews', label: 'Reviews' },
         { id: 'attendance', label: 'Attendance' },
         { id: 'leave', label: 'Leave' },
         { id: 'considerations', label: 'Considerations' },

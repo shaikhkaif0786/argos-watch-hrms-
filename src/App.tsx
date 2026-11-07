@@ -51,6 +51,9 @@ const SettingsModule = lazy(() =>
 const MobileAppManagementModule = lazy(() =>
   import('./components/modules/MobileAppManagementModule').then((m) => ({ default: m.MobileAppManagementModule }))
 );
+const ReviewsModule = lazy(() =>
+  import('./components/modules/ReviewsModule').then((m) => ({ default: m.ReviewsModule }))
+);
 
 function ModuleLoadingFallback() {
   return (
@@ -88,6 +91,8 @@ function ModuleRouter() {
           case 'my-team':
           case 'my-profile':
             return <PeopleModule />;
+          case 'reviews':
+            return <ReviewsModule />;
           case 'attendance':
             return <AttendanceModule />;
           case 'leave':

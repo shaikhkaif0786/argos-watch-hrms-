@@ -23,6 +23,7 @@ import {
   MasterLetterTemplate,
   LetterHistoryRecord,
   BirthdayCelebrationRecord,
+  EmployeeReview,
 } from '../types/hrms';
 
 export const TODAY_DATE = '2026-10-05';
@@ -437,3 +438,28 @@ export const INITIAL_ACTIVITY_LOGS: ActivityLogEntry[] = [
 ];
 
 export const INITIAL_BIRTHDAYS: BirthdayCelebrationRecord[] = [];
+
+export const INITIAL_REVIEWS: EmployeeReview[] = [
+  {
+    id: 'REV-1001',
+    targetEmployeeId: 'EMP-ADMIN',
+    targetEmployeeName: 'Argos Administrator',
+    targetEmployeeDepartment: 'Administration',
+    targetEmployeeDesignation: 'Super Administrator',
+    reviewerId: 'EMP-1008',
+    reviewerEmployeeId: 'EMP-1008',
+    reviewerName: 'Rahul Sharma',
+    reviewerEmployeeName: 'Rahul Sharma',
+    reviewerDepartment: 'Assembling-Packaging/Dispatch',
+    reviewerDesignation: 'Precision Assembly Technician',
+    reviewType: 'POSITIVE',
+    starCount: 5,
+    category: 'Leadership',
+    reason: 'Exemplary leadership during the high-volume Q3 atelier launch. Always supportive and approachable.',
+    status: 'APPROVED',
+    submittedAt: '2026-10-04 14:30',
+    decidedAt: '2026-10-04 15:00',
+    decidedBy: 'Argos Administrator',
+    decisionNote: 'Verified and approved for publication.',
+  },
+];

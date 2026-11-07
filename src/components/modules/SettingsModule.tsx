@@ -46,6 +46,7 @@ import {
   SUPABASE_SMS_OTP_TEMPLATE,
   SUPABASE_LOGIN_ACTIVITY_SQL,
 } from '../../lib/supabase';
+import { SUPABASE_FULL_HRMS_SCHEMA_SQL } from '../../lib/supabaseSync';
 
 type SettingsTab =
   | 'organization'
@@ -1137,6 +1138,37 @@ export const SettingsModule: React.FC = () => {
                 </div>
               </SectionCard>
 
+              {/* Supabase Full HRMS Database Schema Setup Script */}
+              <SectionCard
+                title="Full HRMS Database Schema (All Application Tables)"
+                subtitle="Run this SQL script in Supabase Dashboard → SQL Editor to create all 8 primary application tables (employees, attendance_records, leave_requests, consideration_requests, payroll_records, departments, company_policies, activity_logs)."
+              >
+                <div className="space-y-3 text-xs">
+                  <div className="p-4 rounded-2xl bg-[#F0F0F2] dark:bg-[#1C1C1E] border border-[#E5E5EA] dark:border-[#2C2C2E] space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 font-semibold text-[#1D1D1F] dark:text-[#F5F5F7]">
+                        <Database className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                        <span>SQL Script for All HRMS Application Tables</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(SUPABASE_FULL_HRMS_SCHEMA_SQL);
+                          addToast('Full SQL Schema Copied', 'Paste this into Supabase SQL Editor and click Run.', 'success');
+                        }}
+                        className="px-3 py-1.5 text-xs font-semibold text-white bg-[#000000] dark:bg-white dark:text-[#000000] rounded-xl hover:opacity-90 transition-opacity flex items-center gap-1.5 cursor-pointer shadow-xs"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Copy All Tables SQL</span>
+                      </button>
+                    </div>
+                    <pre className="p-3.5 rounded-xl bg-white dark:bg-[#000000] border border-[#E5E5EA] dark:border-[#2C2C2E] text-[11px] font-mono text-[#1D1D1F] dark:text-[#F5F5F7] max-h-56 overflow-y-auto whitespace-pre-wrap leading-relaxed">
+                      {SUPABASE_FULL_HRMS_SCHEMA_SQL}
+                    </pre>
+                  </div>
+                </div>
+              </SectionCard>
+
               {/* Supabase User Login Activity Tracking Table Schema */}
               <SectionCard
                 title="User Login Activity Tracking (Supabase Table Setup)"
@@ -1164,6 +1196,36 @@ export const SettingsModule: React.FC = () => {
                     <pre className="p-3.5 rounded-xl bg-white dark:bg-[#000000] border border-[#E5E5EA] dark:border-[#2C2C2E] text-[11px] font-mono text-[#1D1D1F] dark:text-[#F5F5F7] max-h-48 overflow-y-auto whitespace-pre-wrap leading-relaxed">
                       {SUPABASE_LOGIN_ACTIVITY_SQL}
                     </pre>
+                  </div>
+                </div>
+              </SectionCard>
+
+              {/* OTP Delivery Troubleshooting & Setup Guide */}
+              <SectionCard
+                title="Supabase Email & Mobile OTP Setup Guide"
+                subtitle="Fixing email/mobile OTP dispatch errors in Supabase Dashboard."
+              >
+                <div className="p-4 rounded-2xl bg-[#F0F0F2] dark:bg-[#1C1C1E] border border-[#E5E5EA] dark:border-[#2C2C2E] text-xs space-y-3 text-[#6E6E73] dark:text-[#A1A1A6]">
+                  <div className="font-bold text-[#1D1D1F] dark:text-[#F5F5F7]">
+                    Why OTPs are not delivered by default in new Supabase projects:
+                  </div>
+
+                  <div className="space-y-2">
+                    <p className="font-semibold text-[#1D1D1F] dark:text-[#F5F5F7]">
+                      1. Email OTP Delivery (Custom SMTP Required):
+                    </p>
+                    <p className="text-[11px] leading-relaxed">
+                      Supabase’s default email service is rate-limited to 3 emails/hour and blocks external custom domains. To send real OTP emails, open Supabase Dashboard → <strong>Authentication → Email Settings</strong> → enable <strong>Custom SMTP</strong> (e.g. Resend, SendGrid, Mailgun, Brevo, or Gmail SMTP).
+                    </p>
+                  </div>
+
+                  <div className="space-y-2 pt-2 border-t border-[#E5E5EA] dark:border-[#2C2C2E]">
+                    <p className="font-semibold text-[#1D1D1F] dark:text-[#F5F5F7]">
+                      2. Mobile SMS OTP Delivery (SMS Gateway Required):
+                    </p>
+                    <p className="text-[11px] leading-relaxed">
+                      Supabase does <strong>not</strong> include a default built-in SMS gateway. To deliver SMS OTPs to mobile phones, open Supabase Dashboard → <strong>Authentication → Phone Auth</strong> → select a Provider (e.g. <strong>Twilio</strong>, <strong>Vonage</strong>, <strong>MessageBird</strong>, or <strong>AWS SNS</strong>) and paste your Account SID &amp; Auth Token.
+                    </p>
                   </div>
                 </div>
               </SectionCard>

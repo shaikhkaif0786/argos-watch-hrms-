@@ -25,6 +25,7 @@ export type PrimaryModuleId =
   | 'documents'
   | 'calendar'
   | 'reports'
+  | 'reviews'
   | 'more'
   | 'settings';
 
@@ -1093,6 +1094,62 @@ export interface MobileAppStoreConfig {
   requireGpsForMobilePunch: boolean;
   updatedAt: string;
   updatedBy: string;
+}
+
+export type ReviewType = 'POSITIVE' | 'NEGATIVE';
+export type ReviewStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+
+export interface EmployeeReview {
+  id: string;
+  targetEmployeeId: string;
+  targetEmployeeName?: string;
+  targetEmployeeDepartment?: string;
+  targetEmployeeDesignation?: string;
+  reviewerEmployeeId?: string;
+  reviewerEmployeeName?: string;
+  reviewerId?: string;
+  reviewerName?: string;
+  reviewerDepartment?: string;
+  reviewerDesignation?: string;
+  reviewType: ReviewType; // POSITIVE or NEGATIVE
+  starCount: number; // 1 to 5 stars
+  category?: string;
+  customCategory?: string;
+  reason: string;
+  status: ReviewStatus; // PENDING | APPROVED | REJECTED
+  submittedAt: string; // ISO date format e.g. "2026-11-06 14:30"
+  decidedAt?: string;
+  decidedBy?: string;
+  decisionNote?: string;
+}
+
+export interface PublicEmployeeReview {
+  id: string;
+  targetEmployeeId: string;
+  targetEmployeeName?: string;
+  targetEmployeeDepartment?: string;
+  targetEmployeeDesignation?: string;
+  reviewType: ReviewType;
+  starCount: number; // 1 to 5 stars
+  category?: string;
+  customCategory?: string;
+  reason: string;
+  submittedAt: string;
+  status?: ReviewStatus;
+}
+
+export interface EmployeeStarSummary {
+  employeeId?: string;
+  targetEmployeeId: string;
+  positiveStarsCount?: number;
+  approvedPositive: number; // Sum of approved positive stars (1-5 per review)
+  negativeStarsCount?: number;
+  approvedNegative: number; // Sum of approved negative stars (1-5 per review)
+  netScore: number; // approvedPositive - approvedNegative
+  currentTotalStars: number; // Total approved stars volume (approvedPositive + approvedNegative)
+  positiveReviewsCount: number;
+  negativeReviewsCount: number;
+  totalApprovedReviews: number;
 }
 
 

@@ -56,6 +56,11 @@ import {
   MobileLocationCaptureRecord,
   MobileAppStoreConfig,
   MobileAttendancePermissionConfig,
+  EmployeeReview,
+  ReviewType,
+  ReviewStatus,
+  PublicEmployeeReview,
+  EmployeeStarSummary,
 } from '../types/hrms';
 import {
   getNormalizedPunchesForRecord,
@@ -85,6 +90,12 @@ import {
   supabaseSignOut,
 } from '../lib/supabase';
 import {
+  syncEmployeeToSupabase,
+  syncAttendanceRecordToSupabase,
+  loadInitialDataFromSupabase,
+  syncReviewToSupabase,
+} from '../lib/supabaseSync';
+import {
   TODAY_DATE,
   INITIAL_COMPANY_SETTINGS,
   INITIAL_DEPARTMENTS,
@@ -102,6 +113,7 @@ import {
   INITIAL_NOTIFICATIONS,
   INITIAL_ACTIVITY_LOGS,
   INITIAL_BIRTHDAYS,
+  INITIAL_REVIEWS,
 } from '../data/seedData';
 import {
   isAssignedTeamMember,
@@ -325,6 +337,30 @@ interface HRMSContextValue {
   addBirthdayCelebration: (payload: Omit<BirthdayCelebrationRecord, 'id' | 'updatedAt' | 'updatedBy'>) => void;
   updateBirthdayCelebration: (id: string, updates: Partial<BirthdayCelebrationRecord>) => void;
   deleteBirthdayCelebration: (id: string) => void;
+
+  // Employee Reviews & Recognition System
+  reviews: EmployeeReview[];
+  submitEmployeeReview: (payload: {
+    targetEmployeeId: string;
+    reviewType: ReviewType;
+    starCount: number;
+    category?: string;
+    customCategory?: string;
+    reason: string;
+  }) => { success: boolean; message: string };
+  decideEmployeeReview: (
+    reviewId: string,
+    status: ReviewStatus,
+    decisionNote?: string
+  ) => void;
+  updateEmployeeReview: (
+    reviewId: string,
+    updates: Partial<Pick<EmployeeReview, 'reviewType' | 'starCount' | 'category' | 'customCategory' | 'reason' | 'status' | 'decisionNote'>>,
+    reasonNote?: string
+  ) => void;
+  deleteEmployeeReview: (reviewId: string, reasonNote?: string) => void;
+  getEmployeeStarSummary: (employeeId: string) => EmployeeStarSummary;
+  getPublicEmployeeReviews: (targetEmployeeId: string) => PublicEmployeeReview[];
   addOrUpdateCustomRule: (
     rule: Omit<CustomCompanyRule, 'id' | 'updatedBy'>,
     existingId?: string
@@ -604,6 +640,9 @@ export const HRMSProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [birthdays, setBirthdays] = useState<BirthdayCelebrationRecord[]>(() =>
     readCached('hrms_persisted_birthdays', INITIAL_BIRTHDAYS)
   );
+  const [reviews, setReviews] = useState<EmployeeReview[]>(() =>
+    readCached('hrms_persisted_reviews', INITIAL_REVIEWS)
+  );
   const [rolesList, setRolesList] = useState<CustomRoleDefinition[]>(() => {
     const cached = readCached('hrms_persisted_roles', INITIAL_ROLES);
     return cached.map((r) => {
@@ -710,6 +749,10 @@ export const HRMSProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     localStorage.setItem('hrms_persisted_mobile_store_config', JSON.stringify(mobileAppStoreConfig));
   }, [mobileAppStoreConfig]);
+
+  useEffect(() => {
+    localStorage.setItem('hrms_persisted_reviews', JSON.stringify(reviews));
+  }, [reviews]);
 
   // Root-Level HR & Role Sync: Whenever the active persona employee's assigned role changes in userAccessList,
   // immediately sync currentRole and activeWorkspace so HR/Admin navigation and modules unlock immediately.
@@ -2247,6 +2290,7 @@ export const HRMSProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     setAttendance(nextAttendance);
     localStorage.setItem('hrms_persisted_attendance', JSON.stringify(nextAttendance));
+    syncAttendanceRecordToSupabase(manualRecord);
 
     appendAuditLog(
       existing ? 'Manual Attendance Correction' : 'Add Manual Attendance',
@@ -2297,6 +2341,7 @@ export const HRMSProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const updatedEmployees = [created, ...allEmployees];
     setAllEmployees(updatedEmployees);
     localStorage.setItem('hrms_persisted_employees', JSON.stringify(updatedEmployees));
+    syncEmployeeToSupabase(created);
 
     // Async write to Firestore if authenticated
     if (firebaseUser && firebaseUser.emailVerified) {
@@ -4068,6 +4113,291 @@ export const HRMSProvider: React.FC<{ children: React.ReactNode }> = ({ children
       'Celebration Entry Removed',
       `"${target.title}" (${target.date}) removed. Employee profile and DOB remain intact.`
     );
+  };
+
+  const submitEmployeeReview = (payload: {
+    targetEmployeeId: string;
+    reviewType: ReviewType;
+    starCount: number;
+    category?: string;
+    customCategory?: string;
+    reason: string;
+  }): { success: boolean; message: string } => {
+    if (!payload.targetEmployeeId) {
+      return { success: false, message: 'Please select an employee to review.' };
+    }
+    if (currentEmployee.id === payload.targetEmployeeId) {
+      return { success: false, message: 'You cannot give stars to yourself. Please select another employee.' };
+    }
+
+    const stars = Math.round(Number(payload.starCount));
+    if (!stars || stars < 1 || stars > 5) {
+      return { success: false, message: 'Please select a star count between 1 and 5 stars.' };
+    }
+
+    const selectedCategory = (payload.category || '').trim();
+    if (!selectedCategory) {
+      return { success: false, message: 'Please select a review category.' };
+    }
+
+    const cleanCustomCategory = (payload.customCategory || '').trim();
+    if (selectedCategory === 'Other' && cleanCustomCategory.length < 2) {
+      return { success: false, message: 'Please enter a custom category description when "Other" is selected.' };
+    }
+
+    const cleanReason = payload.reason.trim();
+    if (cleanReason.length < 10) {
+      return {
+        success: false,
+        message: 'Please provide a meaningful description (at least 10 characters) explaining why you are giving these stars.',
+      };
+    }
+
+    // Reject meaningless repeated characters (e.g., "aaaaaaaaaa")
+    if (/^(.)\1{7,}$/.test(cleanReason.replace(/\s+/g, ''))) {
+      return {
+        success: false,
+        message: 'Please enter a genuine, meaningful description rather than repeated characters.',
+      };
+    }
+
+    // Prevent duplicate pending submission with identical text for the same target employee
+    const hasDuplicatePending = reviews.some(
+      (r) =>
+        (r.reviewerId || r.reviewerEmployeeId) === currentEmployee.id &&
+        r.targetEmployeeId === payload.targetEmployeeId &&
+        r.status === 'PENDING' &&
+        r.reason.trim().toLowerCase() === cleanReason.toLowerCase()
+    );
+    if (hasDuplicatePending) {
+      return {
+        success: false,
+        message: 'A duplicate pending review for this employee with the same description already exists.',
+      };
+    }
+
+    const targetEmp =
+      allEmployees.find((e) => e.id === payload.targetEmployeeId) ||
+      (payload.targetEmployeeId === DEFAULT_ADMIN_OPERATOR.id ? DEFAULT_ADMIN_OPERATOR : undefined);
+
+    // Always use automatic server/system timestamp — never allow manual date overrides
+    const nowStr = new Date().toISOString().replace('T', ' ').slice(0, 16);
+
+    const effectiveCategory =
+      selectedCategory === 'Other' && cleanCustomCategory
+        ? `Other: ${cleanCustomCategory}`
+        : selectedCategory;
+
+    const newReview: EmployeeReview = {
+      id: `REV-${Date.now()}`,
+      targetEmployeeId: payload.targetEmployeeId,
+      targetEmployeeName: targetEmp?.fullName || payload.targetEmployeeId,
+      targetEmployeeDepartment: targetEmp?.department || 'General',
+      targetEmployeeDesignation: targetEmp?.designation || 'Employee',
+      reviewerId: currentEmployee.id,
+      reviewerEmployeeId: currentEmployee.id,
+      reviewerName: currentEmployee.fullName,
+      reviewerEmployeeName: currentEmployee.fullName,
+      reviewerDepartment: currentEmployee.department,
+      reviewerDesignation: currentEmployee.designation,
+      reviewType: payload.reviewType,
+      starCount: stars,
+      category: effectiveCategory,
+      customCategory: cleanCustomCategory || undefined,
+      reason: cleanReason,
+      status: 'PENDING',
+      submittedAt: nowStr,
+    };
+
+    setReviews((prev) => [newReview, ...prev]);
+    syncReviewToSupabase(newReview);
+
+    appendAuditLog(
+      `Review Submitted (${payload.reviewType === 'POSITIVE' ? `+${stars}` : `-${stars}`} Stars)`,
+      'Employees',
+      `${newReview.targetEmployeeName} (${payload.targetEmployeeId})`,
+      payload.targetEmployeeId,
+      'None',
+      `Type: ${payload.reviewType} · Stars: ${stars} · Category: ${effectiveCategory} · Status: PENDING`
+    );
+
+    addToast(
+      'Stars Submitted for Approval',
+      `Your ${payload.reviewType === 'POSITIVE' ? `+${stars}` : `-${stars}`} star review for ${newReview.targetEmployeeName} has been sent to Owner/Admin for approval.`
+    );
+
+    return { success: true, message: 'Review submitted successfully.' };
+  };
+
+  const decideEmployeeReview = (
+    reviewId: string,
+    newStatus: ReviewStatus,
+    decisionNote?: string
+  ) => {
+    if (currentRole !== UserRole.ADMIN && currentRole !== UserRole.HR) {
+      addToast('Permission Denied', 'Only Admin or Owner users can approve or reject reviews.', 'error');
+      return;
+    }
+
+    const targetReview = reviews.find((r) => r.id === reviewId);
+    if (!targetReview) return;
+
+    const previousStatus = targetReview.status;
+    const nowStr = new Date().toISOString().replace('T', ' ').slice(0, 16);
+    const updatedReview: EmployeeReview = {
+      ...targetReview,
+      status: newStatus,
+      decidedAt: nowStr,
+      decidedBy: currentEmployee.fullName,
+      decisionNote: decisionNote !== undefined ? decisionNote : targetReview.decisionNote || '',
+    };
+
+    setReviews((prev) => prev.map((r) => (r.id === reviewId ? updatedReview : r)));
+    syncReviewToSupabase(updatedReview);
+
+    const stars = Math.min(5, Math.max(1, Number(targetReview.starCount) || 1));
+    const actionText =
+      newStatus === 'APPROVED'
+        ? previousStatus === 'REJECTED'
+          ? 'Review Approval Reversed to Approved'
+          : 'Review Approved'
+        : newStatus === 'REJECTED'
+        ? previousStatus === 'APPROVED'
+          ? 'Review Approval Reversed to Rejected'
+          : 'Review Rejected'
+        : 'Review Visibility Changed to Pending';
+
+    appendAuditLog(
+      actionText,
+      'Employees',
+      `Review ${reviewId} (${targetReview.reviewType === 'POSITIVE' ? `+${stars}` : `-${stars}`}★) for ${targetReview.targetEmployeeName || targetReview.targetEmployeeId}`,
+      targetReview.targetEmployeeId,
+      `Status: ${previousStatus}`,
+      `Status: ${newStatus}${decisionNote ? ` · Note: ${decisionNote}` : ''}`
+    );
+
+    addToast(
+      newStatus === 'APPROVED'
+        ? 'Review Approved & Balance Updated'
+        : newStatus === 'REJECTED'
+        ? 'Review Rejected'
+        : 'Review Returned to Pending',
+      `Status updated to ${newStatus}. Employee star balance recalculated automatically.`
+    );
+  };
+
+  const updateEmployeeReview = (
+    reviewId: string,
+    updates: Partial<Pick<EmployeeReview, 'reviewType' | 'starCount' | 'category' | 'customCategory' | 'reason' | 'status' | 'decisionNote'>>,
+    reasonNote?: string
+  ) => {
+    if (currentRole !== UserRole.ADMIN && currentRole !== UserRole.HR) {
+      addToast('Permission Denied', 'Only Admin or Owner users can modify review records.', 'error');
+      return;
+    }
+    const existing = reviews.find((r) => r.id === reviewId);
+    if (!existing) return;
+
+    const updated: EmployeeReview = {
+      ...existing,
+      ...updates,
+      starCount: updates.starCount
+        ? Math.min(5, Math.max(1, Math.round(Number(updates.starCount))))
+        : existing.starCount || 1,
+      decidedAt: new Date().toISOString().replace('T', ' ').slice(0, 16),
+      decidedBy: currentEmployee.fullName,
+    };
+
+    setReviews((prev) => prev.map((r) => (r.id === reviewId ? updated : r)));
+    syncReviewToSupabase(updated);
+
+    appendAuditLog(
+      'Review Record Modified by Authorized Administrator',
+      'Employees',
+      `Review ${reviewId} for ${existing.targetEmployeeName || existing.targetEmployeeId}`,
+      existing.targetEmployeeId,
+      `${existing.reviewType} (${existing.starCount || 1}★) · ${existing.status}`,
+      `${updated.reviewType} (${updated.starCount}★) · ${updated.status}${reasonNote ? ` · Note: ${reasonNote}` : ''}`
+    );
+
+    addToast('Review Record Updated', `Review ${reviewId} has been updated and audited.`);
+  };
+
+  const deleteEmployeeReview = (reviewId: string, reasonNote?: string) => {
+    if (currentRole !== UserRole.ADMIN && currentRole !== UserRole.HR) {
+      addToast('Permission Denied', 'Only Admin or Owner users can delete review records.', 'error');
+      return;
+    }
+    const existing = reviews.find((r) => r.id === reviewId);
+    if (!existing) return;
+
+    setReviews((prev) => prev.filter((r) => r.id !== reviewId));
+
+    appendAuditLog(
+      'Review Visibility Changed (Deleted by Administrator)',
+      'Employees',
+      `Review ${reviewId} for ${existing.targetEmployeeName || existing.targetEmployeeId}`,
+      existing.targetEmployeeId,
+      `${existing.reviewType} (${existing.starCount || 1}★, ${existing.status})`,
+      `Removed${reasonNote ? ` · Reason: ${reasonNote}` : ''}`
+    );
+
+    addToast('Review Removed', `Review ${reviewId} has been removed and star balances updated.`, 'info');
+  };
+
+  const getEmployeeStarSummary = (employeeId: string): EmployeeStarSummary => {
+    const approvedReviews = reviews.filter(
+      (r) => r.targetEmployeeId === employeeId && r.status === 'APPROVED'
+    );
+    const posReviews = approvedReviews.filter((r) => r.reviewType === 'POSITIVE');
+    const negReviews = approvedReviews.filter((r) => r.reviewType === 'NEGATIVE');
+
+    const approvedPositive = posReviews.reduce(
+      (sum, r) => sum + Math.min(5, Math.max(1, Number(r.starCount) || 1)),
+      0
+    );
+    const approvedNegative = negReviews.reduce(
+      (sum, r) => sum + Math.min(5, Math.max(1, Number(r.starCount) || 1)),
+      0
+    );
+    const netScore = approvedPositive - approvedNegative;
+    const currentTotalStars = approvedPositive + approvedNegative;
+
+    return {
+      employeeId,
+      targetEmployeeId: employeeId,
+      positiveStarsCount: approvedPositive,
+      approvedPositive,
+      negativeStarsCount: approvedNegative,
+      approvedNegative,
+      netScore,
+      currentTotalStars,
+      positiveReviewsCount: posReviews.length,
+      negativeReviewsCount: negReviews.length,
+      totalApprovedReviews: approvedReviews.length,
+    };
+  };
+
+  const getPublicEmployeeReviews = (targetEmployeeId: string): PublicEmployeeReview[] => {
+    const targetReviews = reviews.filter((r) => r.targetEmployeeId === targetEmployeeId);
+
+    // Strictly return ONLY APPROVED reviews with all reviewer identity fields stripped
+    return targetReviews
+      .filter((r) => r.status === 'APPROVED')
+      .map((r) => ({
+        id: r.id,
+        targetEmployeeId: r.targetEmployeeId,
+        targetEmployeeName: r.targetEmployeeName,
+        targetEmployeeDepartment: r.targetEmployeeDepartment,
+        targetEmployeeDesignation: r.targetEmployeeDesignation,
+        reviewType: r.reviewType,
+        starCount: Math.min(5, Math.max(1, Number(r.starCount) || 1)),
+        category: r.category || 'Other',
+        customCategory: r.customCategory,
+        reason: r.reason,
+        submittedAt: r.submittedAt,
+        status: r.status,
+      }));
   };
 
   const addOrUpdateCustomRule = (
@@ -6103,6 +6433,13 @@ export const HRMSProvider: React.FC<{ children: React.ReactNode }> = ({ children
         addBirthdayCelebration,
         updateBirthdayCelebration,
         deleteBirthdayCelebration,
+        reviews,
+        submitEmployeeReview,
+        decideEmployeeReview,
+        updateEmployeeReview,
+        deleteEmployeeReview,
+        getEmployeeStarSummary,
+        getPublicEmployeeReviews,
         addOrUpdateCustomRule,
         deleteCustomRule,
         addDepartment,
