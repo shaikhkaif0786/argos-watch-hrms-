@@ -1,7 +1,11 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-const getEnvUrl = () => import.meta.env.VITE_SUPABASE_URL || '';
-const getEnvKey = () => import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+const FALLBACK_SUPABASE_URL = 'https://kmbmbeypdcnmledjdkgs.supabase.co';
+const FALLBACK_SUPABASE_ANON_KEY =
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImttYm1iZXlwZGNubWxlZGpka2dzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM4NTkwNzksImV4cCI6MjEwOTQzNTA3OX0.cCnjYPv-71JNpZ7iF8KSCKxLGlsWMuD6v7HmiVyPphI';
+
+const getEnvUrl = () => import.meta.env.VITE_SUPABASE_URL || FALLBACK_SUPABASE_URL;
+const getEnvKey = () => import.meta.env.VITE_SUPABASE_ANON_KEY || FALLBACK_SUPABASE_ANON_KEY;
 
 const getLocalUrl = () => {
   if (typeof window !== 'undefined') {
