@@ -105,9 +105,11 @@ export const LoginPage: React.FC = () => {
       {/* Top Header Row */}
       <header className="px-6 py-5 flex items-center justify-between border-b border-[#E5E5EA] dark:border-[#1C1C1E] bg-white/70 dark:bg-[#161618]/70 backdrop-blur-md sticky top-0 z-20">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-[#000000] dark:bg-white text-white dark:text-[#000000] flex items-center justify-center font-bold text-sm tracking-tight shadow-sm">
-            <Building2 className="w-5 h-5" />
-          </div>
+          <img
+            src="/argos-logo-round.png"
+            alt="Argos Watch"
+            className="w-10 h-10 rounded-full object-cover shadow-sm ring-1 ring-[#D4AF37]/50"
+          />
           <div>
             <h1 className="text-sm font-semibold tracking-tight text-[#1D1D1F] dark:text-[#F5F5F7]">
               Argos HRMS
