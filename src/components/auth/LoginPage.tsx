@@ -49,24 +49,26 @@ export const LoginPage: React.FC = () => {
     }
 
     if (authMode === 'otp' && !otpSent) {
-      // Send OTP phase via Supabase / System
+      // Send OTP phase strictly via Supabase
+      if (!supabaseActive) {
+        setErrorMessage('Supabase is not configured. Cannot send verification code.');
+        return;
+      }
       setLoading(true);
       try {
-        if (supabaseActive) {
-          const res = await supabaseSendOtp(identifier);
-          if (res.error) {
-            console.warn('Supabase OTP send note:', res.error.message);
-          }
+        const res = await supabaseSendOtp(identifier);
+        if (res.error) {
+          setErrorMessage(res.error.message || 'Failed to send OTP via Supabase.');
+        } else {
+          setOtpSent(true);
+          addToast(
+            'OTP Dispatched',
+            `Verification code sent to ${identifier} via Supabase.`,
+            'success'
+          );
         }
-        setOtpSent(true);
-        addToast(
-          'OTP Dispatched',
-          `Verification code sent to ${identifier}. (Test/Demo OTP: 123456)`,
-          'success'
-        );
       } catch (err) {
-        setOtpSent(true);
-        addToast('OTP Dispatched', `OTP sent to ${identifier}. Use code 123456.`, 'info');
+        setErrorMessage(err instanceof Error ? err.message : 'Failed to send OTP.');
       } finally {
         setLoading(false);
       }
@@ -90,19 +92,6 @@ export const LoginPage: React.FC = () => {
       }
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : 'Sign-in failed.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleQuickDemoLogin = async (
-    demoEmail: string,
-    demoPhone: string,
-    roleName: string
-  ) => {
-    setLoading(true);
-    try {
-      await signInWithEmailOrPhone(demoEmail, 'demo123', 'password');
     } finally {
       setLoading(false);
     }
@@ -288,7 +277,6 @@ export const LoginPage: React.FC = () => {
                     <label className="block text-xs font-semibold text-[#1D1D1F] dark:text-[#F5F5F7]">
                       Password
                     </label>
-                    <span className="text-[11px] text-[#86868B]">Default: demo123</span>
                   </div>
                   <div className="relative flex items-center">
                     <div className="absolute left-3.5 text-[#86868B]">
@@ -361,49 +349,6 @@ export const LoginPage: React.FC = () => {
                 )}
               </button>
             </form>
-
-            {/* Quick Demo Persona Shortcuts */}
-            <div className="pt-4 border-t border-[#E5E5EA] dark:border-[#2C2C2E] space-y-2">
-              <div className="flex items-center justify-between text-[11px] text-[#86868B] font-medium">
-                <span>Quick Role Demo Shortcuts:</span>
-                <span>Select to test role</span>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleQuickDemoLogin(
-                      'argos.subscription04@gmail.com',
-                      '+91 98200 00001',
-                      'Admin'
-                    )
-                  }
-                  className="p-2.5 rounded-xl bg-[#F0F0F2] dark:bg-[#202022] border border-[#E5E5EA] dark:border-[#2C2C2E] text-left hover:border-[#1D1D1F] dark:hover:border-[#F5F5F7] transition-all cursor-pointer group"
-                >
-                  <div className="font-semibold text-xs text-[#1D1D1F] dark:text-[#F5F5F7]">
-                    Admin Workspace
-                  </div>
-                  <div className="text-[10px] text-[#86868B]">Full System Controller</div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleQuickDemoLogin(
-                      'argos.subscription04@gmail.com',
-                      '+91 98200 00001',
-                      'HR'
-                    )
-                  }
-                  className="p-2.5 rounded-xl bg-[#F0F0F2] dark:bg-[#202022] border border-[#E5E5EA] dark:border-[#2C2C2E] text-left hover:border-[#1D1D1F] dark:hover:border-[#F5F5F7] transition-all cursor-pointer group"
-                >
-                  <div className="font-semibold text-xs text-[#1D1D1F] dark:text-[#F5F5F7]">
-                    HR Workspace
-                  </div>
-                  <div className="text-[10px] text-[#86868B]">People &amp; Payroll Operations</div>
-                </button>
-              </div>
-            </div>
           </div>
         </div>
       </main>

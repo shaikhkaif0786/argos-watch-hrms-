@@ -122,7 +122,18 @@ function ModuleRouter() {
 }
 
 function MainContent() {
-  const { isAuthenticated } = useHRMS();
+  const { isAuthenticated, authLoading } = useHRMS();
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-[#FAFAFC] dark:bg-[#000000] flex items-center justify-center text-xs text-[#86868B]">
+        <div className="flex items-center gap-2.5">
+          <div className="w-4 h-4 rounded-full border-2 border-[#1D1D1F] dark:border-white border-t-transparent animate-spin" />
+          <span>Verifying Supabase Session...</span>
+        </div>
+      </div>
+    );
+  }
 
   if (!isAuthenticated) {
     return <LoginPage />;

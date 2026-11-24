@@ -82,6 +82,7 @@ import {
 import { SupportedLanguage, getTranslation } from '../lib/i18n';
 import {
   isSupabaseConfigured,
+  getSupabaseClient,
   supabaseSignInWithEmail,
   supabaseSignInWithPhone,
   supabaseSendOtp,
@@ -574,10 +575,7 @@ const ROLE_TO_PERSONA_EMP_ID: Record<UserRole, string> = {
 };
 
 export const HRMSProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    const stored = localStorage.getItem('hrms_is_authenticated');
-    return stored !== 'false';
-  });
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [authLoading, setAuthLoading] = useState<boolean>(true);
   const [currentRole, setCurrentRole] = useState<UserRole>(UserRole.ADMIN);
@@ -1126,6 +1124,77 @@ export const HRMSProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [appLockEnabled, isAppLocked, lockTimeoutMinutes]);
 
+  // Strict Supabase Auth Session Sync (Blocks app access unless valid Supabase session exists)
+  useEffect(() => {
+    if (!isSupabaseConfigured()) {
+      setIsAuthenticated(false);
+      setAuthLoading(false);
+      return;
+    }
+
+    const client = getSupabaseClient();
+    let mounted = true;
+
+    const syncSessionUser = (sessionUser: { email?: string; phone?: string } | null) => {
+      if (!mounted) return;
+      if (!sessionUser) {
+        setIsAuthenticated(false);
+        localStorage.setItem('hrms_is_authenticated', 'false');
+        setAuthLoading(false);
+        return;
+      }
+
+      const emailLower = (sessionUser.email || '').toLowerCase();
+      const phoneDigits = (sessionUser.phone || '').replace(/\D/g, '');
+      const matchedEmp = allEmployees.find((e) => {
+        const emailMatch = emailLower && e.email && e.email.toLowerCase() === emailLower;
+        const empPhoneDigits = e.phone ? e.phone.replace(/\D/g, '') : '';
+        const phoneMatch = phoneDigits.length >= 6 && empPhoneDigits.endsWith(phoneDigits);
+        return emailMatch || phoneMatch;
+      });
+
+      const targetEmp = matchedEmp || DEFAULT_ADMIN_OPERATOR;
+      setPersonaEmpId(targetEmp.id);
+
+      const accessRec = userAccessList.find((u) => u.employeeId === targetEmp.id);
+      const assignedRole = accessRec?.role || targetEmp.role || UserRole.ADMIN;
+      setCurrentRole(assignedRole);
+
+      if (assignedRole === UserRole.HR) {
+        setActiveWorkspaceState('HR');
+        localStorage.setItem('hrms_active_workspace', 'HR');
+      } else if (assignedRole === UserRole.ADMIN) {
+        setActiveWorkspaceState('ADMIN');
+        localStorage.setItem('hrms_active_workspace', 'ADMIN');
+      } else {
+        setActiveWorkspaceState('OWN');
+        localStorage.setItem('hrms_active_workspace', 'OWN');
+      }
+
+      setIsAuthenticated(true);
+      localStorage.setItem('hrms_is_authenticated', 'true');
+      setAuthLoading(false);
+    };
+
+    client.auth.getSession().then(({ data }) => {
+      syncSessionUser(data.session?.user ?? null);
+    }).catch(() => {
+      if (mounted) {
+        setIsAuthenticated(false);
+        setAuthLoading(false);
+      }
+    });
+
+    const { data: authListener } = client.auth.onAuthStateChange((_event, session) => {
+      syncSessionUser(session?.user ?? null);
+    });
+
+    return () => {
+      mounted = false;
+      authListener.subscription.unsubscribe();
+    };
+  }, []);
+
   // Sync Firebase Auth & Bootstrap User Profile in Firestore
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -1532,23 +1601,35 @@ export const HRMSProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const cleanPhoneDigits = identifier.replace(/\D/g, '');
     const isEmail = cleanIdentifier.includes('@');
 
-    // 1. If Supabase is configured, attempt real Supabase Auth authentication (Password or OTP)
-    if (isSupabaseConfigured()) {
-      try {
-        let res;
-        if (mode === 'otp') {
-          res = await supabaseVerifyOtp(identifier, passwordOrOtp);
-        } else if (isEmail) {
-          res = await supabaseSignInWithEmail(cleanIdentifier, passwordOrOtp);
-        } else {
-          res = await supabaseSignInWithPhone(identifier, passwordOrOtp);
-        }
-        if (res.error) {
-          console.warn('Supabase auth attempt note:', res.error.message);
-        }
-      } catch (err) {
-        console.warn('Supabase auth exception:', err);
+    // 1. Strict Supabase Auth check: User MUST authenticate via Supabase
+    if (!isSupabaseConfigured()) {
+      return {
+        success: false,
+        message: 'Supabase is not configured. Please add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.',
+      };
+    }
+
+    try {
+      let res;
+      if (mode === 'otp') {
+        res = await supabaseVerifyOtp(identifier, passwordOrOtp);
+      } else if (isEmail) {
+        res = await supabaseSignInWithEmail(cleanIdentifier, passwordOrOtp);
+      } else {
+        res = await supabaseSignInWithPhone(identifier, passwordOrOtp);
       }
+
+      if (res.error || !res.data?.session) {
+        return {
+          success: false,
+          message: res.error?.message || 'Authentication failed. Invalid credentials.',
+        };
+      }
+    } catch (err) {
+      return {
+        success: false,
+        message: err instanceof Error ? err.message : 'Supabase authentication failed.',
+      };
     }
 
     // 2. Match local employee profile by Email, Mobile Phone, or Employee ID

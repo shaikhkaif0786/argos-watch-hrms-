@@ -109,11 +109,28 @@ export const supabaseSendOtp = async (identifier: string) => {
     return { data: null, error: new Error('Supabase credentials not configured') };
   }
   const client = getSupabaseClient();
-  const isEmail = identifier.includes('@');
+  const trimmed = identifier.trim();
+  const isEmail = trimmed.includes('@');
   if (isEmail) {
-    return await client.auth.signInWithOtp({ email: identifier });
+    return await client.auth.signInWithOtp({
+      email: trimmed.toLowerCase(),
+      options: {
+        shouldCreateUser: false,
+      },
+    });
   } else {
-    return await client.auth.signInWithOtp({ phone: identifier });
+    const cleanDigits = trimmed.replace(/\D/g, '');
+    const formattedPhone = trimmed.startsWith('+')
+      ? `+${cleanDigits}`
+      : cleanDigits.length === 10
+        ? `+91${cleanDigits}`
+        : `+${cleanDigits}`;
+    return await client.auth.signInWithOtp({
+      phone: formattedPhone,
+      options: {
+        shouldCreateUser: false,
+      },
+    });
   }
 };
 
@@ -125,16 +142,23 @@ export const supabaseVerifyOtp = async (identifier: string, token: string) => {
     return { data: null, error: new Error('Supabase credentials not configured') };
   }
   const client = getSupabaseClient();
-  const isEmail = identifier.includes('@');
+  const trimmed = identifier.trim();
+  const isEmail = trimmed.includes('@');
   if (isEmail) {
     return await client.auth.verifyOtp({
-      email: identifier,
+      email: trimmed.toLowerCase(),
       token: token.trim(),
       type: 'email',
     });
   } else {
+    const cleanDigits = trimmed.replace(/\D/g, '');
+    const formattedPhone = trimmed.startsWith('+')
+      ? `+${cleanDigits}`
+      : cleanDigits.length === 10
+        ? `+91${cleanDigits}`
+        : `+${cleanDigits}`;
     return await client.auth.verifyOtp({
-      phone: identifier,
+      phone: formattedPhone,
       token: token.trim(),
       type: 'sms',
     });
