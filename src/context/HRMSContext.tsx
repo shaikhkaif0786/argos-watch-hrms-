@@ -2023,11 +2023,89 @@ export const HRMSProvider: React.FC<{ children: React.ReactNode }> = ({ children
     );
   };
 
-  // Workflow 1: Check-In & Check-Out with Multiple Punches, Mobile Permission Enforcement & Live GPS Capture
-  const checkInToday = (
+  // Enforce mandatory real GPS capture for all attendance punches
+  const obtainMandatoryGpsPosition = (): Promise<{
+    lat: number;
+    lng: number;
+    acc: number;
+    status: MobileLocationCaptureRecord['locationStatus'];
+    note: string;
+  }> => {
+    return new Promise((resolve, reject) => {
+      if (typeof navigator === 'undefined' || !navigator.geolocation) {
+        reject(new Error('Location service is not supported on this device/browser.'));
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const lat = Number(pos.coords.latitude.toFixed(6));
+          const lng = Number(pos.coords.longitude.toFixed(6));
+          const acc = Math.round(pos.coords.accuracy || 0);
+          const status: MobileLocationCaptureRecord['locationStatus'] =
+            acc > 500 ? 'LOW_ACCURACY' : 'CAPTURED';
+          resolve({
+            lat,
+            lng,
+            acc,
+            status,
+            note:
+              status === 'LOW_ACCURACY'
+                ? `Captured with low GPS accuracy (±${acc}m)`
+                : `Verified live device GPS coordinates (±${acc}m)`,
+          });
+        },
+        (err) => {
+          if (err.code === 1) {
+            reject(
+              new Error(
+                'Location permission is required to punch in/out. Please turn on device location and allow location access in your browser or app settings.'
+              )
+            );
+          } else if (err.code === 2) {
+            reject(
+              new Error(
+                'Location unavailable. Please ensure your device GPS/Location toggle is turned ON and try again.'
+              )
+            );
+          } else {
+            reject(
+              new Error(
+                'GPS location request timed out. Please check your internet/GPS signal and try again.'
+              )
+            );
+          }
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      );
+    });
+  };
+
+  // Workflow 1: Check-In & Check-Out with Multiple Punches, Mobile Permission Enforcement & Mandatory Live GPS Capture
+  const checkInToday = async (
     notes = 'Checked in via Argos Watch Web Portal',
     options?: { viaMobileApp?: boolean } | 'Web Portal' | 'Mobile App'
   ) => {
+    // 0. Enforce Mandatory GPS Location check first
+    let gpsData: {
+      lat: number;
+      lng: number;
+      acc: number;
+      status: MobileLocationCaptureRecord['locationStatus'];
+      note: string;
+    };
+    try {
+      addToast('Verifying Location', 'Fetching verified GPS coordinates...', 'info');
+      gpsData = await obtainMandatoryGpsPosition();
+    } catch (locErr) {
+      const msg =
+        locErr instanceof Error
+          ? locErr.message
+          : 'Location permission required to record attendance.';
+      addToast('Location Access Required', msg, 'error');
+      alert(`[Location Required]\n${msg}`);
+      return;
+    }
     const isMobilePunch = Boolean(
       options === 'Mobile App' ||
         (typeof options === 'object' && options?.viaMobileApp) ||
@@ -2167,14 +2245,36 @@ export const HRMSProvider: React.FC<{ children: React.ReactNode }> = ({ children
       payrollAdjustmentStatus: lateCalc.status,
     };
 
-    if (existing) {
-      setAttendance((prev) => prev.map((a) => (a.id === existing.id ? finalRecord : a)));
-    } else {
-      setAttendance((prev) => [finalRecord, ...prev]);
-    }
+    // Record verified mandatory GPS location for check-in
+    const checkInLocRecord: MobileLocationCaptureRecord = {
+      id: `LOC-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      employeeId: currentEmployee.id,
+      employeeName: currentEmployee.fullName,
+      department: currentEmployee.department,
+      date: TODAY_DATE,
+      punchType: 'CHECK_IN',
+      punchTime: timeStr,
+      timestamp: `${TODAY_DATE} ${timeStr}:00`,
+      latitude: gpsData.lat,
+      longitude: gpsData.lng,
+      accuracyMeters: gpsData.acc,
+      locationName: `GPS Verified (${gpsData.lat.toFixed(5)}, ${gpsData.lng.toFixed(5)})`,
+      locationStatus: gpsData.status,
+      source: punchSource,
+      deviceInfo: mobileUser?.deviceModel || (typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 60) : 'Web Client'),
+      note: gpsData.note,
+    };
+    setMobileLocationLogs((prev) => [checkInLocRecord, ...prev]);
 
-    // Capture real GPS location for check-in
-    capturePunchLocationAndRecord('CHECK_IN', punchSource, timeStr, recordId);
+    const finalRecordWithLoc = {
+      ...finalRecord,
+      checkInLocation: checkInLocRecord,
+    };
+    if (existing) {
+      setAttendance((prev) => prev.map((a) => (a.id === existing.id ? finalRecordWithLoc : a)));
+    } else {
+      setAttendance((prev) => [finalRecordWithLoc, ...prev]);
+    }
 
     appendAuditLog(
       `Punched in at ${timeStr} via ${punchSource}${isFirstIn ? ' (FIRST IN)' : ' (Intermediate IN)'}${isLate ? ` (Late by ${lateMinutes}m)` : ''}`,
@@ -2192,7 +2292,27 @@ export const HRMSProvider: React.FC<{ children: React.ReactNode }> = ({ children
     );
   };
 
-  const checkOutToday = (options?: { viaMobileApp?: boolean } | 'Web Portal' | 'Mobile App') => {
+  const checkOutToday = async (options?: { viaMobileApp?: boolean } | 'Web Portal' | 'Mobile App') => {
+    // 0. Enforce Mandatory GPS Location check first
+    let gpsData: {
+      lat: number;
+      lng: number;
+      acc: number;
+      status: MobileLocationCaptureRecord['locationStatus'];
+      note: string;
+    };
+    try {
+      addToast('Verifying Location', 'Fetching verified GPS coordinates for punch-out...', 'info');
+      gpsData = await obtainMandatoryGpsPosition();
+    } catch (locErr) {
+      const msg =
+        locErr instanceof Error
+          ? locErr.message
+          : 'Location permission required to record attendance.';
+      addToast('Location Access Required', msg, 'error');
+      alert(`[Location Required]\n${msg}`);
+      return;
+    }
     const isMobilePunch = Boolean(
       options === 'Mobile App' || (typeof options === 'object' && options?.viaMobileApp)
     );
@@ -2286,10 +2406,32 @@ export const HRMSProvider: React.FC<{ children: React.ReactNode }> = ({ children
       payrollAdjustmentStatus: lateCalc.status,
     };
 
-    setAttendance((prev) => prev.map((a) => (a.id === existing.id ? updatedRecord : a)));
+    // Record verified mandatory GPS location for check-out
+    const checkOutLocRecord: MobileLocationCaptureRecord = {
+      id: `LOC-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      employeeId: currentEmployee.id,
+      employeeName: currentEmployee.fullName,
+      department: currentEmployee.department,
+      date: TODAY_DATE,
+      punchType: 'CHECK_OUT',
+      punchTime: outTimeStr,
+      timestamp: `${TODAY_DATE} ${outTimeStr}:00`,
+      latitude: gpsData.lat,
+      longitude: gpsData.lng,
+      accuracyMeters: gpsData.acc,
+      locationName: `GPS Verified (${gpsData.lat.toFixed(5)}, ${gpsData.lng.toFixed(5)})`,
+      locationStatus: gpsData.status,
+      source: punchSource,
+      deviceInfo: mobileUser?.deviceModel || (typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 60) : 'Web Client'),
+      note: gpsData.note,
+    };
+    setMobileLocationLogs((prev) => [checkOutLocRecord, ...prev]);
 
-    // Capture real GPS location for check-out
-    capturePunchLocationAndRecord('CHECK_OUT', punchSource, outTimeStr, existing.id);
+    const finalOutRecordWithLoc = {
+      ...updatedRecord,
+      checkOutLocation: checkOutLocRecord,
+    };
+    setAttendance((prev) => prev.map((a) => (a.id === existing.id ? finalOutRecordWithLoc : a)));
 
     appendAuditLog(
       `Punched out at ${outTimeStr} via ${punchSource} (Worked duration: ${workedHours}h across ${finalNorm.validPairsCount} punch pairs)`,
